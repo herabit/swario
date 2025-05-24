@@ -1,0 +1,12 @@
+[package]
+name = "swario"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.23.0", optional = true, default-features = false, features = ["derive"] }
+zerocopy = { version = "0.8.25", optional = true, default-features = false, features = ["derive"] }
+
+[features]
+bytemuck = ["dep:bytemuck"]
+zerocopy = ["dep:zerocopy"]
