@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
 /// This macro calls the actual uint implementation macro if the lane type is unsigned.
-macro_rules! uint_impl {
+macro_rules! uint_inherent {
     ($name:ident[u8; $count:tt] => $repr:ident {
         $($body:tt)*
     }) => {
-        $crate::uint_macros::uint_impl!(@actual $name[u8; $count] => $repr {
+        $crate::uint_macros::uint_inherent!(@actual $name[u8; $count] => $repr {
             $($body)*
         });
     };
@@ -14,7 +14,7 @@ macro_rules! uint_impl {
     ($name:ident[u16; $count:tt] => $repr:ident {
         $($body:tt)*
     }) => {
-        $crate::uint_macros::uint_impl!(@actual $name[u16; $count] => $repr {
+        $crate::uint_macros::uint_inherent!(@actual $name[u16; $count] => $repr {
             $($body)*
         });
     };
@@ -23,7 +23,7 @@ macro_rules! uint_impl {
     ($name:ident[u32; $count:tt] => $repr:ident {
         $($body:tt)*
     }) => {
-        $crate::uint_macros::uint_impl!(@actual $name[u32; $count] => $repr {
+        $crate::uint_macros::uint_inherent!(@actual $name[u32; $count] => $repr {
             $($body)*
         });
     };
@@ -32,7 +32,7 @@ macro_rules! uint_impl {
     ($name:ident[u64; $count:tt] => $repr:ident {
         $($body:tt)*
     }) => {
-        $crate::uint_macros::uint_impl!(@actual $name[u64; $count] => $repr {
+        $crate::uint_macros::uint_inherent!(@actual $name[u64; $count] => $repr {
             $($body)*
         });
     };
@@ -41,7 +41,7 @@ macro_rules! uint_impl {
     ($name:ident[u128; $count:tt] => $repr:ident {
         $($body:tt)*
     }) => {
-        $crate::uint_macros::uint_impl!(@actual $name[u128; $count] => $repr {
+        $crate::uint_macros::uint_inherent!(@actual $name[u128; $count] => $repr {
             $($body)*
         });
     };
@@ -50,7 +50,7 @@ macro_rules! uint_impl {
     ($name:ident[usize; $count:tt] => $repr:ident {
         $($body:tt)*
     }) => {
-        $crate::uint_macros::uint_impl!(@actual $name[usize; $count] => $repr {
+        $crate::uint_macros::uint_inherent!(@actual $name[usize; $count] => $repr {
             $($body)*
         });
     };
@@ -64,7 +64,7 @@ macro_rules! uint_impl {
     ($($tt:tt)*) => {};
 }
 
-pub(crate) use uint_impl;
+pub(crate) use uint_inherent;
 
 macro_rules! uint_consts {
     ($name:ident[u8; $count:tt] => $repr:ident {

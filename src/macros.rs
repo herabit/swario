@@ -78,18 +78,18 @@ macro_rules! define {
         }
 
         impl $name {
-            $crate::macros::common_impl!($name[$lane; $count] => $repr);
-            $crate::uint_macros::uint_impl!($name[$lane; $count] => $repr { $($body)* });
-            $crate::int_macros::int_impl!($name[$lane; $count] => $repr { $($body)* });
+            $crate::macros::common_inherent!($name[$lane; $count] => $repr);
+            $crate::uint_macros::uint_inherent!($name[$lane; $count] => $repr { $($body)* });
+            $crate::int_macros::int_inherent!($name[$lane; $count] => $repr { $($body)* });
         }
     };
 }
 
 pub(crate) use define;
 
-/// Common SWAR impls.
+/// Common SWAR inherent impls.
 #[rustfmt::skip]
-macro_rules! common_impl {
+macro_rules! common_inherent {
     ($name:ident[$lane:ident; $count:tt] => $repr:ident) => {
         #[doc = concat!("\
             Create a new [`", stringify!($name), "`] from its \
@@ -248,9 +248,7 @@ macro_rules! common_impl {
         }
 
 
-        #[doc = concat!("\
-            Rotates the vector by `n` lanes to the left."
-        )]
+        /// Rotates the vector by `n` lanes to the left.
         ///
         /// # Examples
         ///
@@ -263,6 +261,7 @@ macro_rules! common_impl {
         #[doc = concat!("let after  = ", stringify!($name), "::from_lanes(", $crate::macros::rotate_lanes_data!($count left), ");")]
         /// 
         /// assert!(before.rotate_lanes_left(1) == after);
+        /// ```
         #[inline(always)]
         #[must_use]
         pub const fn rotate_lanes_left(self, n: u32) -> $name {
@@ -278,9 +277,7 @@ macro_rules! common_impl {
 
         
 
-        #[doc = concat!("\
-            Rotates the vector by `n` lanes to the right."
-        )]
+        /// Rotates the vector by `n` lanes to the right.
         ///
         /// # Examples
         ///
@@ -293,6 +290,7 @@ macro_rules! common_impl {
         #[doc = concat!("let after  = ", stringify!($name), "::from_lanes(", $crate::macros::rotate_lanes_data!($count right), ");")]
         /// 
         /// assert!(before.rotate_lanes_right(1) == after);
+        /// ```
         #[inline(always)]
         #[must_use]
         pub const fn rotate_lanes_right(self, n: u32) -> $name {
@@ -305,10 +303,79 @@ macro_rules! common_impl {
                 $name(self.0.rotate_left(n_bits))
             }
         }
+
+        /// Shifts the vector by `n` lanes to the left.
+        ///
+        /// # Examples
+        ///
+        /// Basic example:
+        ///
+        /// ```
+        /// use swario::*;
+        ///
+        #[doc = concat!("let before = ", stringify!($name), "::from_lanes(", $crate::macros::shift_lanes_data!($count), ");")]
+        #[doc = concat!("let after  = ", stringify!($name), "::from_lanes(", $crate::macros::shift_lanes_data!($count left), ");")]
+        /// 
+        #[doc = concat!("assert!(before.shift_lanes_left(", $crate::macros::halve!($count), ") == after);")]
+        /// ```
+        #[inline(always)]
+        #[must_use]
+        pub const fn shift_lanes_left(self, n: u32) -> $name {
+            let n_bits = $lane::BITS * (n % $name::LANES);
+
+            if cfg!(target_endian = "big") {
+                $name(self.0 << n_bits)
+            } else {
+                // NOTE: Little endian is ***weird***.
+                $name(self.0 >> n_bits)
+            }
+        }
+        
+        /// Shifts the vector by `n` lanes to the right.
+        ///
+        /// # Examples
+        ///
+        /// Basic example:
+        ///
+        /// ```
+        /// use swario::*;
+        ///
+        #[doc = concat!("let before = ", stringify!($name), "::from_lanes(", $crate::macros::shift_lanes_data!($count), ");")]
+        #[doc = concat!("let after  = ", stringify!($name), "::from_lanes(", $crate::macros::shift_lanes_data!($count right), ");")]
+        /// 
+        #[doc = concat!("assert!(before.shift_lanes_right(", $crate::macros::halve!($count), ") == after);")]
+        /// ```
+        #[inline(always)]
+        #[must_use]
+        pub const fn shift_lanes_right(self, n: u32) -> $name {
+            let n_bits = $lane::BITS * (n % $name::LANES);
+
+            if cfg!(target_endian = "big") {
+                $name(self.0 >> n_bits)
+            } else {
+                // NOTE: Little endian is ***weird***.
+                $name(self.0 << n_bits)
+            }
+        }
+
+        // #[doc]
     };
 }
 
-pub(crate) use common_impl;
+/// Macro that provides a constructor for a vector.
+#[rustfmt::skip]
+macro_rules! vector_new {
+    ($name:ident[$lane:ident; 2]) => {
+        #[doc = concat!("Create a new [`", stringify!($name), "`]")]
+    };
+    ($name:ident[$lane:ident; 4]) => {};
+    ($name:ident[$lane:ident; 8]) => {};
+    ($name:ident[$lane:ident; 16]) => {};
+}
+
+pub(crate) use vector_new;
+
+pub(crate) use common_inherent;
 
 /// Common constants for SWAR types.
 #[rustfmt::skip]
@@ -536,6 +603,19 @@ macro_rules! bits_dec {
 
 pub(crate) use bits_dec;
 
+// Macro that halves some value.
+#[rustfmt::skip]
+macro_rules! halve {
+    (0)  => { 0 };
+    (1)  => { 0 };
+    (2)  => { 1 };
+    (4)  => { 2 };
+    (8)  => { 4 };
+    (16) => { 8 };
+}
+
+pub(crate) use halve;
+
 /// Macro that returns the minimum value of a primitive.
 #[rustfmt::skip]
 macro_rules! min {
@@ -622,7 +702,7 @@ macro_rules! lsb {
 
 pub(crate) use lsb;
 
-/// Macro that returns test data for lane shifts.
+/// Macro that returns test data for lane rotations.
 #[rustfmt::skip]
 macro_rules! rotate_lanes_data {
     (2)       => { "[0x00, 0x01]" };
@@ -638,8 +718,30 @@ macro_rules! rotate_lanes_data {
     (8 left)  => { "[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x00]" };
     
     (16)       => { "[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F]" };
-    (16 right) => { "[0x0F, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E]" };
     (16 left)  => { "[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x00]" };
+    (16 right) => { "[0x0F, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E]" };
 }
 
 pub(crate) use rotate_lanes_data;
+
+/// Macro that returns test data for lane shifts.
+#[rustfmt::skip]
+macro_rules! shift_lanes_data {
+    (2)        => { "[0x0A, 0x0B]" };
+    (2 right)  => { "[0x00, 0x0A]" };
+    (2 left)   => { "[0x0B, 0x00]" };
+
+    (4)        => { "[0x0A, 0x0A, 0x0B, 0x0B]" };
+    (4 right)  => { "[0x00, 0x00, 0x0A, 0x0A]" };
+    (4 left)   => { "[0x0B, 0x0B, 0x00, 0x00]" };
+
+    (8)        => { "[0x0A, 0x0A, 0x0A, 0x0A, 0x0B, 0x0B, 0x0B, 0x0B]" };
+    (8 right)  => { "[0x00, 0x00, 0x00, 0x00, 0x0A, 0x0A, 0x0A, 0x0A]" };
+    (8 left)   => { "[0x0B, 0x0B, 0x0B, 0x0B, 0x00, 0x00, 0x00, 0x00]" };
+
+    (16)       => { "[0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B]" };
+    (16 right) => { "[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A]" };
+    (16 left)  => { "[0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]" };
+}
+
+pub(crate) use shift_lanes_data;

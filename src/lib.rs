@@ -15,11 +15,3 @@ pub use uint::*;
 
 #[doc(inline)]
 pub use int::*;
-
-#[test]
-fn lol() {
-    let lanes = [0xAA_u16, 0xBB, 0xCC, 0xDD];
-    let test = U16x4::from_lanes(lanes).rotate_lanes_left(1);
-
-    println!("{:?}", test.to_lanes());
-}
