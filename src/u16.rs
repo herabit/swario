@@ -5,7 +5,7 @@
 ///
 /// This type is a transparent wrapper over a [`u32`], but is
 /// treated as a `[u16; 2]`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(
     feature = "bytemuck",
     derive(::bytemuck::Zeroable, ::bytemuck::Pod, ::bytemuck::TransparentWrapper)
@@ -74,6 +74,133 @@ const _: () = {
     );
 };
 
+impl ::core::fmt::Debug for U16x2 {
+    #[inline]
+    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        self.as_array().fmt(f)
+    }
+}
+
+impl U16x2 {
+    /// The size of this vector in bits (32-bit).
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::BITS, u32::BITS);
+    /// assert_eq!(U16x2::BITS, 32);
+    ///
+    /// ```
+    pub const BITS: u32 = u32::BITS;
+
+    /// The size of this vector's lanes in bits (16-bit).
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::LANE_BITS, u16::BITS);
+    /// assert_eq!(U16x2::LANE_BITS, 16);
+    ///
+    /// ```
+    pub const LANE_BITS: u32 = u16::BITS;
+
+    /// The amount of [`u16`] lanes (2) this vector contains.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::LANES, 2);
+    /// assert_eq!(U16x2::LANES, size_of::<U16x2>() / size_of::<u16>());
+    ///
+    /// ```
+    pub const LANES: usize = 2;
+
+    /// A [`U16x2`] with all lanes set to [`u16::MAX`].
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::MAX, U16x2::splat(65535));
+    ///
+    /// ```
+    pub const MAX: U16x2 = U16x2::splat(u16::MAX);
+
+    /// A [`U16x2`] with all lanes set to [`u16::MIN`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::MIN, U16x2::splat(0));
+    ///
+    /// ```
+    pub const MIN: U16x2 = U16x2::splat(u16::MIN);
+
+    /// A [`U16x2`] with all lanes set to their least significant bit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::LSB, U16x2::splat(0x0001));
+    ///
+    /// ```
+    pub const LSB: U16x2 = U16x2::splat(1 << 0);
+
+    /// A [`U16x2`] with all lanes set to their most significant bit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::MSB, U16x2::splat(0x8000));
+    ///
+    /// ```
+    pub const MSB: U16x2 = U16x2::splat(1 << (u16::BITS - 1));
+
+    /// A [`U16x2`] with all lanes set to zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::ZERO, U16x2::splat(0));
+    ///
+    /// ```
+    pub const ZERO: U16x2 = U16x2::splat(0);
+
+    /// A [`U16x2`] with all lanes set to one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::ONE, U16x2::splat(1));
+    ///
+    /// ```
+    pub const ONE: U16x2 = U16x2::splat(1);
+}
 impl U16x2 {
     /// Create a new [`U16x2`] from an array of 2 [`u16`]s.
     #[inline(always)]
@@ -178,7 +305,7 @@ impl U16x2 {
     }
 }
 impl U16x2 {
-    /// The size of this vector in bits (32-bit).
+    /// Rotates the vector by `n` lanes to the right.
     ///
     /// # Examples
     ///
@@ -187,13 +314,26 @@ impl U16x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::BITS, u32::BITS);
-    /// assert_eq!(U16x2::BITS, 32);
+    /// let before = U16x2::from_array([0x00, 0x01]);
+    /// let after = U16x2::from_array([0x01, 0x00]);
+    ///
+    /// assert_eq!(before.rotate_lanes_right(1), after);
     ///
     /// ```
-    pub const BITS: u32 = u32::BITS;
+    #[inline(always)]
+    #[must_use]
+    pub const fn rotate_lanes_right(self, n: u32) -> U16x2 {
+        let n_bits = u16::BITS * (n % U16x2::LANES as u32);
 
-    /// The size of this vector's lanes in bits (16-bit).
+        if ::core::cfg!(target_endian = "big") {
+            U16x2(self.0.rotate_right(n_bits))
+        } else {
+            // NOTE: Little endian is weird.
+            U16x2(self.0.rotate_left(n_bits))
+        }
+    }
+
+    /// Rotates the vector by `n` lanes to the left.
     ///
     /// # Examples
     ///
@@ -202,13 +342,27 @@ impl U16x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::LANE_BITS, u16::BITS);
-    /// assert_eq!(U16x2::LANE_BITS, 16);
+    /// let before = U16x2::from_array([0x00, 0x01]);
+    /// let after = U16x2::from_array([0x01, 0x00]);
+    ///
+    /// assert_eq!(before.rotate_lanes_left(1), after);
     ///
     /// ```
-    pub const LANE_BITS: u32 = u16::BITS;
+    #[inline(always)]
+    #[must_use]
+    pub const fn rotate_lanes_left(self, n: u32) -> U16x2 {
+        let n_bits = u16::BITS * (n % U16x2::LANES as u32);
 
-    /// The amount of [`u16`] lanes (2) this vector contains.
+        if ::core::cfg!(target_endian = "big") {
+            U16x2(self.0.rotate_left(n_bits))
+        } else {
+            // NOTE: Little endian is weird.
+            U16x2(self.0.rotate_right(n_bits))
+        }
+    }
+}
+impl U16x2 {
+    /// Shifts the vector by `n` lanes to the right.
     ///
     /// # Examples
     ///
@@ -217,13 +371,26 @@ impl U16x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::LANES, 2);
-    /// assert_eq!(U16x2::LANES, size_of::<U16x2>() / size_of::<u16>());
+    /// let before = U16x2::from_array([0x0A, 0x0B]);
+    /// let after = U16x2::from_array([0x00, 0x0A]);
+    ///
+    /// assert_eq!(before.shift_lanes_right(1), after);
     ///
     /// ```
-    pub const LANES: usize = 2;
+    #[inline(always)]
+    #[must_use]
+    pub const fn shift_lanes_right(self, n: u32) -> U16x2 {
+        let n_bits = u16::BITS * (n % U16x2::LANES as u32);
 
-    /// A [`U16x2`] with all lanes set to [`u16::MAX`].
+        if ::core::cfg!(target_endian = "big") {
+            U16x2(self.0 >> n_bits)
+        } else {
+            // NOTE: Little endian is weird.
+            U16x2(self.0 << n_bits)
+        }
+    }
+
+    /// Shifts the vector by `n` lanes to the left.
     ///
     /// # Examples
     ///
@@ -232,46 +399,301 @@ impl U16x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::MAX.to_array(), [65535; 2]);
+    /// let before = U16x2::from_array([0x0A, 0x0B]);
+    /// let after = U16x2::from_array([0x0B, 0x00]);
+    ///
+    /// assert_eq!(before.shift_lanes_left(1), after);
     ///
     /// ```
-    pub const MAX: U16x2 = U16x2::splat(u16::MAX);
+    #[inline(always)]
+    #[must_use]
+    pub const fn shift_lanes_left(self, n: u32) -> U16x2 {
+        let n_bits = u16::BITS * (n % U16x2::LANES as u32);
 
-    /// A [`U16x2`] with all lanes set to [`u16::MIN`].
+        if ::core::cfg!(target_endian = "big") {
+            U16x2(self.0 << n_bits)
+        } else {
+            // NOTE: Little endian is weird.
+            U16x2(self.0 >> n_bits)
+        }
+    }
+}
+impl U16x2 {
+    /// Performs a bitwise NOT on each [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0x00).not(), U16x2::splat(!0x00));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn not(self) -> U16x2 {
+        U16x2(!self.0)
+    }
+
+    /// Performs a bitwise OR on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::MIN.to_array(), [0; 2]);
+    /// assert_eq!(U16x2::splat(0b01).or(U16x2::splat(0b10)), U16x2::splat(0b11));
     ///
     /// ```
-    pub const MIN: U16x2 = U16x2::splat(u16::MIN);
+    #[inline(always)]
+    #[must_use]
+    pub const fn or(self, rhs: U16x2) -> U16x2 {
+        U16x2(self.0 | rhs.0)
+    }
 
-    /// A [`U16x2`] with all lanes set to their least significant bit.
+    /// Performs a bitwise AND on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::LSB.to_array(), [0x0001; 2]);
+    /// assert_eq!(U16x2::splat(0b1101).and(U16x2::splat(0b0111)), U16x2::splat(0b0101));
     ///
     /// ```
-    pub const LSB: U16x2 = U16x2::splat(1 << 0);
+    #[inline(always)]
+    #[must_use]
+    pub const fn and(self, rhs: U16x2) -> U16x2 {
+        U16x2(self.0 & rhs.0)
+    }
 
-    /// A [`U16x2`] with all lanes set to their most significant bit.
+    /// Performs a bitwise XOR on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::MSB.to_array(), [0x8000; 2]);
+    /// assert_eq!(U16x2::splat(0b1101).xor(U16x2::splat(0b0111)), U16x2::splat(0b1010));
     ///
     /// ```
-    pub const MSB: U16x2 = U16x2::splat(1 << (u16::BITS - 1));
+    #[inline(always)]
+    #[must_use]
+    pub const fn xor(self, rhs: U16x2) -> U16x2 {
+        U16x2(self.0 ^ rhs.0)
+    }
+}
+impl U16x2 {
+    /// Performs an unchecked left shift on every [`u16`] lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    #[inline(always)]
+    #[must_use]
+    #[track_caller]
+    pub const unsafe fn unchecked_shl(self, n: u32) -> U16x2 {
+        // SAFETY: The caller ensures `n < 16`.
+        unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
+
+        // Calculate the mask for bits that overflowed into another lane.
+        let overflow_mask = (0x0000FFFF_u32 << n) & 0xFFFF0000_u32;
+
+        U16x2((self.0 << n) & !overflow_mask)
+    }
+
+    /// Performs an unchecked right shift on every [`u16`] lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    #[inline(always)]
+    #[must_use]
+    #[track_caller]
+    pub const unsafe fn unchecked_shr(self, n: u32) -> U16x2 {
+        // SAFETY: The caller ensures `n < 16`.
+        unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
+
+        // Calculate the mask for bits that overflowed into another lane.
+        let overflow_mask = (0x0000FFFF_u32 >> n) & 0xFFFF0000_u32;
+
+        U16x2(self.0 >> n & !overflow_mask)
+    }
+
+    /// Performs a wrapping left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b01).wrapping_shl(1), U16x2::splat(0b10));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn wrapping_shl(self, n: u32) -> U16x2 {
+        // SAFETY: By masking by the lane bit size we ensure that
+        //         we're not overflowing when we shift.
+        unsafe { self.unchecked_shl(n & (u16::BITS - 1)) }
+    }
+
+    /// Performs a wrapping right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b10).wrapping_shr(1), U16x2::splat(0b01));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn wrapping_shr(self, n: u32) -> U16x2 {
+        // SAFETY: By masking by the lane bit size we ensure that
+        //         we're not overflowing when we shift.
+        unsafe { self.unchecked_shr(n & (u16::BITS - 1)) }
+    }
+
+    /// Performs an overflowing left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b001).overflowing_shl(2), (U16x2::splat(0b100), false));
+    /// assert_eq!(U16x2::splat(0b001).overflowing_shl(16), (U16x2::splat(0b001), true));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn overflowing_shl(self, n: u32) -> (U16x2, bool) {
+        (self.wrapping_shl(n), n >= u16::BITS)
+    }
+
+    /// Performs an overflowing right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    ///
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b100).overflowing_shr(2), (U16x2::splat(0b001), false));
+    /// assert_eq!(U16x2::splat(0b100).overflowing_shr(16), (U16x2::splat(0b100), true));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn overflowing_shr(self, n: u32) -> (U16x2, bool) {
+        (self.wrapping_shr(n), n >= u16::BITS)
+    }
+
+    /// Performs a checked left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b001).checked_shl(2), Some(U16x2::splat(0b100)));
+    /// assert_eq!(U16x2::splat(0b001).checked_shl(16), None);
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn checked_shl(self, n: u32) -> Option<U16x2> {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            Some(unsafe { self.unchecked_shl(n) })
+        } else {
+            None
+        }
+    }
+
+    /// Performs a checked right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b100).checked_shr(2), Some(U16x2::splat(0b001)));
+    /// assert_eq!(U16x2::splat(0b100).checked_shr(16), None);
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn checked_shr(self, n: u32) -> Option<U16x2> {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            Some(unsafe { self.unchecked_shr(n) })
+        } else {
+            None
+        }
+    }
+
+    /// Performs an unbounded left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b001).unbounded_shl(2), U16x2::splat(0b100));
+    /// assert_eq!(U16x2::splat(0b001).unbounded_shl(16), U16x2::splat(0));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn unbounded_shl(self, n: u32) -> U16x2 {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            unsafe { self.unchecked_shl(n) }
+        } else {
+            U16x2::splat(0)
+        }
+    }
+
+    /// Performs an unbounded right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x2::splat(0b100).unbounded_shr(2), U16x2::splat(0b001));
+    /// assert_eq!(U16x2::splat(0b100).unbounded_shr(16), U16x2::splat(0));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn unbounded_shr(self, n: u32) -> U16x2 {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            unsafe { self.unchecked_shr(n) }
+        } else {
+            U16x2::splat(0)
+        }
+    }
 }
 /// A 64-bit SWAR vector containing 4 [`u16`]s.
 ///
@@ -280,7 +702,7 @@ impl U16x2 {
 ///
 /// This type is a transparent wrapper over a [`u64`], but is
 /// treated as a `[u16; 4]`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(
     feature = "bytemuck",
     derive(::bytemuck::Zeroable, ::bytemuck::Pod, ::bytemuck::TransparentWrapper)
@@ -349,6 +771,133 @@ const _: () = {
     );
 };
 
+impl ::core::fmt::Debug for U16x4 {
+    #[inline]
+    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        self.as_array().fmt(f)
+    }
+}
+
+impl U16x4 {
+    /// The size of this vector in bits (64-bit).
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::BITS, u64::BITS);
+    /// assert_eq!(U16x4::BITS, 64);
+    ///
+    /// ```
+    pub const BITS: u32 = u64::BITS;
+
+    /// The size of this vector's lanes in bits (16-bit).
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::LANE_BITS, u16::BITS);
+    /// assert_eq!(U16x4::LANE_BITS, 16);
+    ///
+    /// ```
+    pub const LANE_BITS: u32 = u16::BITS;
+
+    /// The amount of [`u16`] lanes (4) this vector contains.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::LANES, 4);
+    /// assert_eq!(U16x4::LANES, size_of::<U16x4>() / size_of::<u16>());
+    ///
+    /// ```
+    pub const LANES: usize = 4;
+
+    /// A [`U16x4`] with all lanes set to [`u16::MAX`].
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::MAX, U16x4::splat(65535));
+    ///
+    /// ```
+    pub const MAX: U16x4 = U16x4::splat(u16::MAX);
+
+    /// A [`U16x4`] with all lanes set to [`u16::MIN`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::MIN, U16x4::splat(0));
+    ///
+    /// ```
+    pub const MIN: U16x4 = U16x4::splat(u16::MIN);
+
+    /// A [`U16x4`] with all lanes set to their least significant bit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::LSB, U16x4::splat(0x0001));
+    ///
+    /// ```
+    pub const LSB: U16x4 = U16x4::splat(1 << 0);
+
+    /// A [`U16x4`] with all lanes set to their most significant bit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::MSB, U16x4::splat(0x8000));
+    ///
+    /// ```
+    pub const MSB: U16x4 = U16x4::splat(1 << (u16::BITS - 1));
+
+    /// A [`U16x4`] with all lanes set to zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::ZERO, U16x4::splat(0));
+    ///
+    /// ```
+    pub const ZERO: U16x4 = U16x4::splat(0);
+
+    /// A [`U16x4`] with all lanes set to one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::ONE, U16x4::splat(1));
+    ///
+    /// ```
+    pub const ONE: U16x4 = U16x4::splat(1);
+}
 impl U16x4 {
     /// Create a new [`U16x4`] from an array of 4 [`u16`]s.
     #[inline(always)]
@@ -453,7 +1002,7 @@ impl U16x4 {
     }
 }
 impl U16x4 {
-    /// The size of this vector in bits (64-bit).
+    /// Rotates the vector by `n` lanes to the right.
     ///
     /// # Examples
     ///
@@ -462,13 +1011,26 @@ impl U16x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::BITS, u64::BITS);
-    /// assert_eq!(U16x4::BITS, 64);
+    /// let before = U16x4::from_array([0x00, 0x01, 0x02, 0x03]);
+    /// let after = U16x4::from_array([0x03, 0x00, 0x01, 0x02]);
+    ///
+    /// assert_eq!(before.rotate_lanes_right(1), after);
     ///
     /// ```
-    pub const BITS: u32 = u64::BITS;
+    #[inline(always)]
+    #[must_use]
+    pub const fn rotate_lanes_right(self, n: u32) -> U16x4 {
+        let n_bits = u16::BITS * (n % U16x4::LANES as u32);
 
-    /// The size of this vector's lanes in bits (16-bit).
+        if ::core::cfg!(target_endian = "big") {
+            U16x4(self.0.rotate_right(n_bits))
+        } else {
+            // NOTE: Little endian is weird.
+            U16x4(self.0.rotate_left(n_bits))
+        }
+    }
+
+    /// Rotates the vector by `n` lanes to the left.
     ///
     /// # Examples
     ///
@@ -477,13 +1039,27 @@ impl U16x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::LANE_BITS, u16::BITS);
-    /// assert_eq!(U16x4::LANE_BITS, 16);
+    /// let before = U16x4::from_array([0x00, 0x01, 0x02, 0x03]);
+    /// let after = U16x4::from_array([0x01, 0x02, 0x03, 0x00]);
+    ///
+    /// assert_eq!(before.rotate_lanes_left(1), after);
     ///
     /// ```
-    pub const LANE_BITS: u32 = u16::BITS;
+    #[inline(always)]
+    #[must_use]
+    pub const fn rotate_lanes_left(self, n: u32) -> U16x4 {
+        let n_bits = u16::BITS * (n % U16x4::LANES as u32);
 
-    /// The amount of [`u16`] lanes (4) this vector contains.
+        if ::core::cfg!(target_endian = "big") {
+            U16x4(self.0.rotate_left(n_bits))
+        } else {
+            // NOTE: Little endian is weird.
+            U16x4(self.0.rotate_right(n_bits))
+        }
+    }
+}
+impl U16x4 {
+    /// Shifts the vector by `n` lanes to the right.
     ///
     /// # Examples
     ///
@@ -492,13 +1068,26 @@ impl U16x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::LANES, 4);
-    /// assert_eq!(U16x4::LANES, size_of::<U16x4>() / size_of::<u16>());
+    /// let before = U16x4::from_array([0x0A, 0x0A, 0x0B, 0x0B]);
+    /// let after = U16x4::from_array([0x00, 0x00, 0x0A, 0x0A]);
+    ///
+    /// assert_eq!(before.shift_lanes_right(2), after);
     ///
     /// ```
-    pub const LANES: usize = 4;
+    #[inline(always)]
+    #[must_use]
+    pub const fn shift_lanes_right(self, n: u32) -> U16x4 {
+        let n_bits = u16::BITS * (n % U16x4::LANES as u32);
 
-    /// A [`U16x4`] with all lanes set to [`u16::MAX`].
+        if ::core::cfg!(target_endian = "big") {
+            U16x4(self.0 >> n_bits)
+        } else {
+            // NOTE: Little endian is weird.
+            U16x4(self.0 << n_bits)
+        }
+    }
+
+    /// Shifts the vector by `n` lanes to the left.
     ///
     /// # Examples
     ///
@@ -507,46 +1096,301 @@ impl U16x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::MAX.to_array(), [65535; 4]);
+    /// let before = U16x4::from_array([0x0A, 0x0A, 0x0B, 0x0B]);
+    /// let after = U16x4::from_array([0x0B, 0x0B, 0x00, 0x00]);
+    ///
+    /// assert_eq!(before.shift_lanes_left(2), after);
     ///
     /// ```
-    pub const MAX: U16x4 = U16x4::splat(u16::MAX);
+    #[inline(always)]
+    #[must_use]
+    pub const fn shift_lanes_left(self, n: u32) -> U16x4 {
+        let n_bits = u16::BITS * (n % U16x4::LANES as u32);
 
-    /// A [`U16x4`] with all lanes set to [`u16::MIN`].
+        if ::core::cfg!(target_endian = "big") {
+            U16x4(self.0 << n_bits)
+        } else {
+            // NOTE: Little endian is weird.
+            U16x4(self.0 >> n_bits)
+        }
+    }
+}
+impl U16x4 {
+    /// Performs a bitwise NOT on each [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0x00).not(), U16x4::splat(!0x00));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn not(self) -> U16x4 {
+        U16x4(!self.0)
+    }
+
+    /// Performs a bitwise OR on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::MIN.to_array(), [0; 4]);
+    /// assert_eq!(U16x4::splat(0b01).or(U16x4::splat(0b10)), U16x4::splat(0b11));
     ///
     /// ```
-    pub const MIN: U16x4 = U16x4::splat(u16::MIN);
+    #[inline(always)]
+    #[must_use]
+    pub const fn or(self, rhs: U16x4) -> U16x4 {
+        U16x4(self.0 | rhs.0)
+    }
 
-    /// A [`U16x4`] with all lanes set to their least significant bit.
+    /// Performs a bitwise AND on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::LSB.to_array(), [0x0001; 4]);
+    /// assert_eq!(U16x4::splat(0b1101).and(U16x4::splat(0b0111)), U16x4::splat(0b0101));
     ///
     /// ```
-    pub const LSB: U16x4 = U16x4::splat(1 << 0);
+    #[inline(always)]
+    #[must_use]
+    pub const fn and(self, rhs: U16x4) -> U16x4 {
+        U16x4(self.0 & rhs.0)
+    }
 
-    /// A [`U16x4`] with all lanes set to their most significant bit.
+    /// Performs a bitwise XOR on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::MSB.to_array(), [0x8000; 4]);
+    /// assert_eq!(U16x4::splat(0b1101).xor(U16x4::splat(0b0111)), U16x4::splat(0b1010));
     ///
     /// ```
-    pub const MSB: U16x4 = U16x4::splat(1 << (u16::BITS - 1));
+    #[inline(always)]
+    #[must_use]
+    pub const fn xor(self, rhs: U16x4) -> U16x4 {
+        U16x4(self.0 ^ rhs.0)
+    }
+}
+impl U16x4 {
+    /// Performs an unchecked left shift on every [`u16`] lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    #[inline(always)]
+    #[must_use]
+    #[track_caller]
+    pub const unsafe fn unchecked_shl(self, n: u32) -> U16x4 {
+        // SAFETY: The caller ensures `n < 16`.
+        unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
+
+        // Calculate the mask for bits that overflowed into another lane.
+        let overflow_mask = (0x0000FFFF0000FFFF_u64 << n) & 0xFFFF0000FFFF0000_u64;
+
+        U16x4((self.0 << n) & !overflow_mask)
+    }
+
+    /// Performs an unchecked right shift on every [`u16`] lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    #[inline(always)]
+    #[must_use]
+    #[track_caller]
+    pub const unsafe fn unchecked_shr(self, n: u32) -> U16x4 {
+        // SAFETY: The caller ensures `n < 16`.
+        unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
+
+        // Calculate the mask for bits that overflowed into another lane.
+        let overflow_mask = (0x0000FFFF0000FFFF_u64 >> n) & 0xFFFF0000FFFF0000_u64;
+
+        U16x4(self.0 >> n & !overflow_mask)
+    }
+
+    /// Performs a wrapping left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b01).wrapping_shl(1), U16x4::splat(0b10));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn wrapping_shl(self, n: u32) -> U16x4 {
+        // SAFETY: By masking by the lane bit size we ensure that
+        //         we're not overflowing when we shift.
+        unsafe { self.unchecked_shl(n & (u16::BITS - 1)) }
+    }
+
+    /// Performs a wrapping right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b10).wrapping_shr(1), U16x4::splat(0b01));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn wrapping_shr(self, n: u32) -> U16x4 {
+        // SAFETY: By masking by the lane bit size we ensure that
+        //         we're not overflowing when we shift.
+        unsafe { self.unchecked_shr(n & (u16::BITS - 1)) }
+    }
+
+    /// Performs an overflowing left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b001).overflowing_shl(2), (U16x4::splat(0b100), false));
+    /// assert_eq!(U16x4::splat(0b001).overflowing_shl(16), (U16x4::splat(0b001), true));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn overflowing_shl(self, n: u32) -> (U16x4, bool) {
+        (self.wrapping_shl(n), n >= u16::BITS)
+    }
+
+    /// Performs an overflowing right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    ///
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b100).overflowing_shr(2), (U16x4::splat(0b001), false));
+    /// assert_eq!(U16x4::splat(0b100).overflowing_shr(16), (U16x4::splat(0b100), true));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn overflowing_shr(self, n: u32) -> (U16x4, bool) {
+        (self.wrapping_shr(n), n >= u16::BITS)
+    }
+
+    /// Performs a checked left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b001).checked_shl(2), Some(U16x4::splat(0b100)));
+    /// assert_eq!(U16x4::splat(0b001).checked_shl(16), None);
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn checked_shl(self, n: u32) -> Option<U16x4> {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            Some(unsafe { self.unchecked_shl(n) })
+        } else {
+            None
+        }
+    }
+
+    /// Performs a checked right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b100).checked_shr(2), Some(U16x4::splat(0b001)));
+    /// assert_eq!(U16x4::splat(0b100).checked_shr(16), None);
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn checked_shr(self, n: u32) -> Option<U16x4> {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            Some(unsafe { self.unchecked_shr(n) })
+        } else {
+            None
+        }
+    }
+
+    /// Performs an unbounded left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b001).unbounded_shl(2), U16x4::splat(0b100));
+    /// assert_eq!(U16x4::splat(0b001).unbounded_shl(16), U16x4::splat(0));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn unbounded_shl(self, n: u32) -> U16x4 {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            unsafe { self.unchecked_shl(n) }
+        } else {
+            U16x4::splat(0)
+        }
+    }
+
+    /// Performs an unbounded right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x4::splat(0b100).unbounded_shr(2), U16x4::splat(0b001));
+    /// assert_eq!(U16x4::splat(0b100).unbounded_shr(16), U16x4::splat(0));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn unbounded_shr(self, n: u32) -> U16x4 {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            unsafe { self.unchecked_shr(n) }
+        } else {
+            U16x4::splat(0)
+        }
+    }
 }
 /// A 128-bit SWAR vector containing 8 [`u16`]s.
 ///
@@ -555,7 +1399,7 @@ impl U16x4 {
 ///
 /// This type is a transparent wrapper over a [`u128`], but is
 /// treated as a `[u16; 8]`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(
     feature = "bytemuck",
     derive(::bytemuck::Zeroable, ::bytemuck::Pod, ::bytemuck::TransparentWrapper)
@@ -624,6 +1468,133 @@ const _: () = {
     );
 };
 
+impl ::core::fmt::Debug for U16x8 {
+    #[inline]
+    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        self.as_array().fmt(f)
+    }
+}
+
+impl U16x8 {
+    /// The size of this vector in bits (128-bit).
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::BITS, u128::BITS);
+    /// assert_eq!(U16x8::BITS, 128);
+    ///
+    /// ```
+    pub const BITS: u32 = u128::BITS;
+
+    /// The size of this vector's lanes in bits (16-bit).
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::LANE_BITS, u16::BITS);
+    /// assert_eq!(U16x8::LANE_BITS, 16);
+    ///
+    /// ```
+    pub const LANE_BITS: u32 = u16::BITS;
+
+    /// The amount of [`u16`] lanes (8) this vector contains.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::LANES, 8);
+    /// assert_eq!(U16x8::LANES, size_of::<U16x8>() / size_of::<u16>());
+    ///
+    /// ```
+    pub const LANES: usize = 8;
+
+    /// A [`U16x8`] with all lanes set to [`u16::MAX`].
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::MAX, U16x8::splat(65535));
+    ///
+    /// ```
+    pub const MAX: U16x8 = U16x8::splat(u16::MAX);
+
+    /// A [`U16x8`] with all lanes set to [`u16::MIN`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::MIN, U16x8::splat(0));
+    ///
+    /// ```
+    pub const MIN: U16x8 = U16x8::splat(u16::MIN);
+
+    /// A [`U16x8`] with all lanes set to their least significant bit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::LSB, U16x8::splat(0x0001));
+    ///
+    /// ```
+    pub const LSB: U16x8 = U16x8::splat(1 << 0);
+
+    /// A [`U16x8`] with all lanes set to their most significant bit.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::MSB, U16x8::splat(0x8000));
+    ///
+    /// ```
+    pub const MSB: U16x8 = U16x8::splat(1 << (u16::BITS - 1));
+
+    /// A [`U16x8`] with all lanes set to zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::ZERO, U16x8::splat(0));
+    ///
+    /// ```
+    pub const ZERO: U16x8 = U16x8::splat(0);
+
+    /// A [`U16x8`] with all lanes set to one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::ONE, U16x8::splat(1));
+    ///
+    /// ```
+    pub const ONE: U16x8 = U16x8::splat(1);
+}
 impl U16x8 {
     /// Create a new [`U16x8`] from an array of 8 [`u16`]s.
     #[inline(always)]
@@ -728,7 +1699,7 @@ impl U16x8 {
     }
 }
 impl U16x8 {
-    /// The size of this vector in bits (128-bit).
+    /// Rotates the vector by `n` lanes to the right.
     ///
     /// # Examples
     ///
@@ -737,13 +1708,26 @@ impl U16x8 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::BITS, u128::BITS);
-    /// assert_eq!(U16x8::BITS, 128);
+    /// let before = U16x8::from_array([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+    /// let after = U16x8::from_array([0x07, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+    ///
+    /// assert_eq!(before.rotate_lanes_right(1), after);
     ///
     /// ```
-    pub const BITS: u32 = u128::BITS;
+    #[inline(always)]
+    #[must_use]
+    pub const fn rotate_lanes_right(self, n: u32) -> U16x8 {
+        let n_bits = u16::BITS * (n % U16x8::LANES as u32);
 
-    /// The size of this vector's lanes in bits (16-bit).
+        if ::core::cfg!(target_endian = "big") {
+            U16x8(self.0.rotate_right(n_bits))
+        } else {
+            // NOTE: Little endian is weird.
+            U16x8(self.0.rotate_left(n_bits))
+        }
+    }
+
+    /// Rotates the vector by `n` lanes to the left.
     ///
     /// # Examples
     ///
@@ -752,13 +1736,27 @@ impl U16x8 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::LANE_BITS, u16::BITS);
-    /// assert_eq!(U16x8::LANE_BITS, 16);
+    /// let before = U16x8::from_array([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+    /// let after = U16x8::from_array([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x00]);
+    ///
+    /// assert_eq!(before.rotate_lanes_left(1), after);
     ///
     /// ```
-    pub const LANE_BITS: u32 = u16::BITS;
+    #[inline(always)]
+    #[must_use]
+    pub const fn rotate_lanes_left(self, n: u32) -> U16x8 {
+        let n_bits = u16::BITS * (n % U16x8::LANES as u32);
 
-    /// The amount of [`u16`] lanes (8) this vector contains.
+        if ::core::cfg!(target_endian = "big") {
+            U16x8(self.0.rotate_left(n_bits))
+        } else {
+            // NOTE: Little endian is weird.
+            U16x8(self.0.rotate_right(n_bits))
+        }
+    }
+}
+impl U16x8 {
+    /// Shifts the vector by `n` lanes to the right.
     ///
     /// # Examples
     ///
@@ -767,13 +1765,26 @@ impl U16x8 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::LANES, 8);
-    /// assert_eq!(U16x8::LANES, size_of::<U16x8>() / size_of::<u16>());
+    /// let before = U16x8::from_array([0x0A, 0x0A, 0x0A, 0x0A, 0x0B, 0x0B, 0x0B, 0x0B]);
+    /// let after = U16x8::from_array([0x00, 0x00, 0x00, 0x00, 0x0A, 0x0A, 0x0A, 0x0A]);
+    ///
+    /// assert_eq!(before.shift_lanes_right(4), after);
     ///
     /// ```
-    pub const LANES: usize = 8;
+    #[inline(always)]
+    #[must_use]
+    pub const fn shift_lanes_right(self, n: u32) -> U16x8 {
+        let n_bits = u16::BITS * (n % U16x8::LANES as u32);
 
-    /// A [`U16x8`] with all lanes set to [`u16::MAX`].
+        if ::core::cfg!(target_endian = "big") {
+            U16x8(self.0 >> n_bits)
+        } else {
+            // NOTE: Little endian is weird.
+            U16x8(self.0 << n_bits)
+        }
+    }
+
+    /// Shifts the vector by `n` lanes to the left.
     ///
     /// # Examples
     ///
@@ -782,44 +1793,301 @@ impl U16x8 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::MAX.to_array(), [65535; 8]);
+    /// let before = U16x8::from_array([0x0A, 0x0A, 0x0A, 0x0A, 0x0B, 0x0B, 0x0B, 0x0B]);
+    /// let after = U16x8::from_array([0x0B, 0x0B, 0x0B, 0x0B, 0x00, 0x00, 0x00, 0x00]);
+    ///
+    /// assert_eq!(before.shift_lanes_left(4), after);
     ///
     /// ```
-    pub const MAX: U16x8 = U16x8::splat(u16::MAX);
+    #[inline(always)]
+    #[must_use]
+    pub const fn shift_lanes_left(self, n: u32) -> U16x8 {
+        let n_bits = u16::BITS * (n % U16x8::LANES as u32);
 
-    /// A [`U16x8`] with all lanes set to [`u16::MIN`].
+        if ::core::cfg!(target_endian = "big") {
+            U16x8(self.0 << n_bits)
+        } else {
+            // NOTE: Little endian is weird.
+            U16x8(self.0 >> n_bits)
+        }
+    }
+}
+impl U16x8 {
+    /// Performs a bitwise NOT on each [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0x00).not(), U16x8::splat(!0x00));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn not(self) -> U16x8 {
+        U16x8(!self.0)
+    }
+
+    /// Performs a bitwise OR on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::MIN.to_array(), [0; 8]);
+    /// assert_eq!(U16x8::splat(0b01).or(U16x8::splat(0b10)), U16x8::splat(0b11));
     ///
     /// ```
-    pub const MIN: U16x8 = U16x8::splat(u16::MIN);
+    #[inline(always)]
+    #[must_use]
+    pub const fn or(self, rhs: U16x8) -> U16x8 {
+        U16x8(self.0 | rhs.0)
+    }
 
-    /// A [`U16x8`] with all lanes set to their least significant bit.
+    /// Performs a bitwise AND on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::LSB.to_array(), [0x0001; 8]);
+    /// assert_eq!(U16x8::splat(0b1101).and(U16x8::splat(0b0111)), U16x8::splat(0b0101));
     ///
     /// ```
-    pub const LSB: U16x8 = U16x8::splat(1 << 0);
+    #[inline(always)]
+    #[must_use]
+    pub const fn and(self, rhs: U16x8) -> U16x8 {
+        U16x8(self.0 & rhs.0)
+    }
 
-    /// A [`U16x8`] with all lanes set to their most significant bit.
+    /// Performs a bitwise XOR on each [`u16`] lane.
     ///
     /// # Examples
     ///
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::MSB.to_array(), [0x8000; 8]);
+    /// assert_eq!(U16x8::splat(0b1101).xor(U16x8::splat(0b0111)), U16x8::splat(0b1010));
     ///
     /// ```
-    pub const MSB: U16x8 = U16x8::splat(1 << (u16::BITS - 1));
+    #[inline(always)]
+    #[must_use]
+    pub const fn xor(self, rhs: U16x8) -> U16x8 {
+        U16x8(self.0 ^ rhs.0)
+    }
+}
+impl U16x8 {
+    /// Performs an unchecked left shift on every [`u16`] lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    #[inline(always)]
+    #[must_use]
+    #[track_caller]
+    pub const unsafe fn unchecked_shl(self, n: u32) -> U16x8 {
+        // SAFETY: The caller ensures `n < 16`.
+        unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
+
+        // Calculate the mask for bits that overflowed into another lane.
+        let overflow_mask = (0x0000FFFF0000FFFF0000FFFF0000FFFF_u128 << n)
+            & 0xFFFF0000FFFF0000FFFF0000FFFF0000_u128;
+
+        U16x8((self.0 << n) & !overflow_mask)
+    }
+
+    /// Performs an unchecked right shift on every [`u16`] lane.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    #[inline(always)]
+    #[must_use]
+    #[track_caller]
+    pub const unsafe fn unchecked_shr(self, n: u32) -> U16x8 {
+        // SAFETY: The caller ensures `n < 16`.
+        unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
+
+        // Calculate the mask for bits that overflowed into another lane.
+        let overflow_mask = (0x0000FFFF0000FFFF0000FFFF0000FFFF_u128 >> n)
+            & 0xFFFF0000FFFF0000FFFF0000FFFF0000_u128;
+
+        U16x8(self.0 >> n & !overflow_mask)
+    }
+
+    /// Performs a wrapping left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b01).wrapping_shl(1), U16x8::splat(0b10));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn wrapping_shl(self, n: u32) -> U16x8 {
+        // SAFETY: By masking by the lane bit size we ensure that
+        //         we're not overflowing when we shift.
+        unsafe { self.unchecked_shl(n & (u16::BITS - 1)) }
+    }
+
+    /// Performs a wrapping right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b10).wrapping_shr(1), U16x8::splat(0b01));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn wrapping_shr(self, n: u32) -> U16x8 {
+        // SAFETY: By masking by the lane bit size we ensure that
+        //         we're not overflowing when we shift.
+        unsafe { self.unchecked_shr(n & (u16::BITS - 1)) }
+    }
+
+    /// Performs an overflowing left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b001).overflowing_shl(2), (U16x8::splat(0b100), false));
+    /// assert_eq!(U16x8::splat(0b001).overflowing_shl(16), (U16x8::splat(0b001), true));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn overflowing_shl(self, n: u32) -> (U16x8, bool) {
+        (self.wrapping_shl(n), n >= u16::BITS)
+    }
+
+    /// Performs an overflowing right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    ///
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b100).overflowing_shr(2), (U16x8::splat(0b001), false));
+    /// assert_eq!(U16x8::splat(0b100).overflowing_shr(16), (U16x8::splat(0b100), true));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn overflowing_shr(self, n: u32) -> (U16x8, bool) {
+        (self.wrapping_shr(n), n >= u16::BITS)
+    }
+
+    /// Performs a checked left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b001).checked_shl(2), Some(U16x8::splat(0b100)));
+    /// assert_eq!(U16x8::splat(0b001).checked_shl(16), None);
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn checked_shl(self, n: u32) -> Option<U16x8> {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            Some(unsafe { self.unchecked_shl(n) })
+        } else {
+            None
+        }
+    }
+
+    /// Performs a checked right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b100).checked_shr(2), Some(U16x8::splat(0b001)));
+    /// assert_eq!(U16x8::splat(0b100).checked_shr(16), None);
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn checked_shr(self, n: u32) -> Option<U16x8> {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            Some(unsafe { self.unchecked_shr(n) })
+        } else {
+            None
+        }
+    }
+
+    /// Performs an unbounded left shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b001).unbounded_shl(2), U16x8::splat(0b100));
+    /// assert_eq!(U16x8::splat(0b001).unbounded_shl(16), U16x8::splat(0));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn unbounded_shl(self, n: u32) -> U16x8 {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            unsafe { self.unchecked_shl(n) }
+        } else {
+            U16x8::splat(0)
+        }
+    }
+
+    /// Performs an unbounded right shift on every [`u16`] lane.
+    ///
+    /// # Examples
+    ///
+    /// Basic usage:
+    ///
+    /// ```
+    /// use swario::*;
+    ///
+    /// assert_eq!(U16x8::splat(0b100).unbounded_shr(2), U16x8::splat(0b001));
+    /// assert_eq!(U16x8::splat(0b100).unbounded_shr(16), U16x8::splat(0));
+    ///
+    /// ```
+    #[inline(always)]
+    #[must_use]
+    pub const fn unbounded_shr(self, n: u32) -> U16x8 {
+        if n < u16::BITS {
+            // SAFETY: We just checked that `n` is in range.
+            unsafe { self.unchecked_shr(n) }
+        } else {
+            U16x8::splat(0)
+        }
+    }
 }

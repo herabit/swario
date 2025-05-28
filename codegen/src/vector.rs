@@ -1,8 +1,8 @@
 use core::fmt;
-use std::num::NonZero;
+use std::{iter, num::NonZero};
 
 use anyhow::Context;
-use indoc::writedoc;
+use indoc::{formatdoc, writedoc};
 
 use crate::scalar::{Scalar, Unsigned};
 
@@ -33,9 +33,13 @@ impl Vector {
 
     /// Write all of the definitions and imples for this type.
     pub fn write_all(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
-        self.define(out).context("defining type")?;
-        self.base(out).context("defining constructors")?;
-        self.consts(out).context("defining constants")?;
+        self.define(out)?;
+        self.consts(out)?;
+        self.base(out)?;
+        self.rotate_lanes(out)?;
+        self.shift_lanes(out)?;
+        self.bitwise(out)?;
+        self.shift(out)?;
 
         Ok(())
     }
@@ -66,7 +70,7 @@ impl Vector {
                 ///
                 /// This type is a transparent wrapper over a [`{repr}`], but is
                 /// treated as a `[{scalar}; {lanes}]`.
-                #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+                #[derive(Clone, Copy, PartialEq, Eq, Default)]
                 #[cfg_attr(\
                     feature = \"bytemuck\", \
                     derive(\
@@ -141,6 +145,13 @@ impl Vector {
                     \");
                 }};
 
+                impl ::core::fmt::Debug for {name} {{
+                    #[inline]
+                    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {{
+                        self.as_array().fmt(f)
+                    }}
+                }}
+
             ",
         )?;
 
@@ -189,6 +200,27 @@ impl Vector {
 
             msb
         };
+
+        let neg_one = if scalar.is_signed() {
+            Some(formatdoc!(
+                "
+                    /// A [`{name}`] with all lanes set to negative one.
+                    ///
+                    /// # Examples
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::NEG_ONE, {name}::splat(-1));
+                    pub const NEG_ONE: {name} = {name}::splat(-1);
+
+                "
+            ))
+        } else {
+            None
+        };
+
+        let neg_one = neg_one.as_deref().unwrap_or("");
 
         writedoc!(
             out,
@@ -248,7 +280,7 @@ impl Vector {
                     /// ```
                     /// use swario::*;
                     ///
-                    /// assert_eq!({name}::MAX.to_array(), [{max}; {lanes}]);
+                    /// assert_eq!({name}::MAX, {name}::splat({max}));
                     /// 
                     /// ```
                     pub const MAX: {name} = {name}::splat({scalar}::MAX);
@@ -260,7 +292,7 @@ impl Vector {
                     /// ```
                     /// use swario::*;
                     ///
-                    /// assert_eq!({name}::MIN.to_array(), [{min}; {lanes}]);
+                    /// assert_eq!({name}::MIN, {name}::splat({min}));
                     /// 
                     /// ```
                     pub const MIN: {name} = {name}::splat({scalar}::MIN);
@@ -272,7 +304,7 @@ impl Vector {
                     /// ```
                     /// use swario::*;
                     ///
-                    /// assert_eq!({name}::LSB.to_array(), [{lsb}; {lanes}]);
+                    /// assert_eq!({name}::LSB, {name}::splat({lsb}));
                     ///
                     /// ```
                     pub const LSB: {name} = {name}::splat(1 << 0);
@@ -284,10 +316,36 @@ impl Vector {
                     /// ```
                     /// use swario::*;
                     ///
-                    /// assert_eq!({name}::MSB.to_array(), [{msb}; {lanes}]);
+                    /// assert_eq!({name}::MSB, {name}::splat({msb}));
                     ///
                     /// ```
                     pub const MSB: {name} = {name}::splat(1 << ({scalar}::BITS - 1));
+
+                    /// A [`{name}`] with all lanes set to zero.
+                    ///
+                    /// # Examples
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::ZERO, {name}::splat(0));
+                    /// 
+                    /// ```
+                    pub const ZERO: {name} = {name}::splat(0);
+
+                    /// A [`{name}`] with all lanes set to one.
+                    ///
+                    /// # Examples
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::ONE, {name}::splat(1));
+                    /// 
+                    /// ```
+                    pub const ONE: {name} = {name}::splat(1);
+
+                    {neg_one}
                 }}
             "
         )?;
@@ -427,8 +485,288 @@ impl Vector {
         Ok(())
     }
 
-    /// Adds lanewise rotations.
+    /// Add lane rotations.
     pub fn rotate_lanes(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
+        let Self {
+            scalar,
+            lanes,
+            name,
+            ..
+        } = self;
+
+        let mut data = (0..lanes.get())
+            .map(|l| format!("{l:#04X}"))
+            .collect::<Vec<_>>();
+
+        let base = data.join(", ");
+
+        let right = {
+            data.rotate_right(1);
+
+            let right = data.join(", ");
+            data.rotate_left(1);
+
+            right
+        };
+
+        let left = {
+            data.rotate_left(1);
+
+            let left = data.join(", ");
+            data.rotate_right(1);
+
+            left
+        };
+
+        writedoc!(
+            out,
+            "
+                impl {name} {{
+                    /// Rotates the vector by `n` lanes to the right.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// let before = {name}::from_array([{base}]);
+                    /// let after = {name}::from_array([{right}]);
+                    ///
+                    /// assert_eq!(before.rotate_lanes_right(1), after);
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn rotate_lanes_right(self, n: u32) -> {name} {{
+                        let n_bits = {scalar}::BITS * (n % {name}::LANES as u32);
+
+                        if ::core::cfg!(target_endian = \"big\") {{
+                            {name}(self.0.rotate_right(n_bits))
+                        }} else {{
+                            // NOTE: Little endian is weird.
+                            {name}(self.0.rotate_left(n_bits))
+                        }}
+                    }}
+
+                    /// Rotates the vector by `n` lanes to the left.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// let before = {name}::from_array([{base}]);
+                    /// let after = {name}::from_array([{left}]);
+                    ///
+                    /// assert_eq!(before.rotate_lanes_left(1), after);
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn rotate_lanes_left(self, n: u32) -> {name} {{
+                        let n_bits = {scalar}::BITS * (n % {name}::LANES as u32);
+
+                        if ::core::cfg!(target_endian = \"big\") {{
+                            {name}(self.0.rotate_left(n_bits))
+                        }} else {{
+                            // NOTE: Little endian is weird.
+                            {name}(self.0.rotate_right(n_bits))
+                        }}
+                    }}
+                }}
+            "
+        )?;
+
+        Ok(())
+    }
+
+    /// Add lane shifts.
+    pub fn shift_lanes(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
+        let Self {
+            scalar,
+            lanes,
+            name,
+            ..
+        } = self;
+
+        let shift = lanes.get() / 2;
+
+        let base = (0..shift)
+            .map(|_| "0x0A")
+            .chain((0..shift).map(|_| "0x0B"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let right = (0..shift)
+            .map(|_| "0x00")
+            .chain((0..shift).map(|_| "0x0A"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let left = (0..shift)
+            .map(|_| "0x0B")
+            .chain((0..shift).map(|_| "0x00"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        writedoc!(
+            out,
+            "
+                impl {name} {{
+                    /// Shifts the vector by `n` lanes to the right.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// let before = {name}::from_array([{base}]);
+                    /// let after = {name}::from_array([{right}]);
+                    ///
+                    /// assert_eq!(before.shift_lanes_right({shift}), after);
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn shift_lanes_right(self, n: u32) -> {name} {{
+                        let n_bits = {scalar}::BITS * (n % {name}::LANES as u32);
+
+                        if ::core::cfg!(target_endian = \"big\") {{
+                            {name}(self.0 >> n_bits)
+                        }} else {{
+                            // NOTE: Little endian is weird.
+                            {name}(self.0 << n_bits)
+                        }}
+                    }}
+
+                    /// Shifts the vector by `n` lanes to the left.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// let before = {name}::from_array([{base}]);
+                    /// let after = {name}::from_array([{left}]);
+                    ///
+                    /// assert_eq!(before.shift_lanes_left({shift}), after);
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn shift_lanes_left(self, n: u32) -> {name} {{
+                        let n_bits = {scalar}::BITS * (n % {name}::LANES as u32);
+
+                        if ::core::cfg!(target_endian = \"big\") {{
+                            {name}(self.0 << n_bits)
+                        }} else {{
+                            // NOTE: Little endian is weird.
+                            {name}(self.0 >> n_bits)
+                        }}
+                    }}
+                }}
+            "
+        )?;
+
+        Ok(())
+    }
+
+    /// Implements bitwise operations.
+    pub fn bitwise(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
+        let Self {
+            scalar,
+            // lanes,
+            // repr,
+            name,
+            ..
+        } = self;
+
+        writedoc!(
+            out,
+            "
+                impl {name} {{
+                    /// Performs a bitwise NOT on each [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0x00).not(), {name}::splat(!0x00));
+                    /// 
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn not(self) -> {name} {{
+                        {name}(!self.0)
+                    }}
+
+                    /// Performs a bitwise OR on each [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b01).or({name}::splat(0b10)), {name}::splat(0b11));
+                    /// 
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn or(self, rhs: {name}) -> {name} {{
+                        {name}(self.0 | rhs.0)
+                    }}
+
+                    /// Performs a bitwise AND on each [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b1101).and({name}::splat(0b0111)), {name}::splat(0b0101));
+                    /// 
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn and(self, rhs: {name}) -> {name} {{
+                        {name}(self.0 & rhs.0)
+                    }}
+
+                    /// Performs a bitwise XOR on each [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b1101).xor({name}::splat(0b0111)), {name}::splat(0b1010));
+                    /// 
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn xor(self, rhs: {name}) -> {name} {{
+                        {name}(self.0 ^ rhs.0)
+                    }}
+                }}
+            "
+        )?;
+
+        Ok(())
+    }
+
+    /// Implements bit shift operations.
+    pub fn shift(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
         let Self {
             scalar,
             lanes,
@@ -436,8 +774,285 @@ impl Vector {
             name,
         } = self;
 
-        // let base = (0..lanes.get()).map(|l| l a)
+        let bits = scalar.width().unwrap();
+
+        let upper_mask = {
+            let nibbles = (0..lanes.get())
+                .rev()
+                .map(|lane| lane % 2 != 0)
+                .map(|is_upper| if is_upper { "F" } else { "0" })
+                .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
+
+            iter::once("0x")
+                .chain(nibbles)
+                .chain(["_", repr.name()])
+                .collect::<String>()
+        };
+
+        let lower_mask = {
+            let nibbles = (0..lanes.get())
+                .rev()
+                .map(|lane| lane % 2 == 0)
+                .map(|is_lower| if is_lower { "F" } else { "0" })
+                .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
+
+            iter::once("0x")
+                .chain(nibbles)
+                .chain(["_", repr.name()])
+                .collect::<String>()
+        };
+
+        let shr = if scalar.is_unsigned() {
+            formatdoc!(
+                "
+                    // Calculate the mask for bits that overflowed into another lane.
+                    let overflow_mask = ({lower_mask} >> n) & {upper_mask};
+
+                    {name}(self.0 >> n & !overflow_mask)
+                "
+            )
+        } else {
+            formatdoc!(
+                "
+                    // Get a mask of the sign bits.
+                    let sign_mask = self.0 & {name}::MSB.0;
+
+                    // Get a mask of the negative lanes.
+                    let neg_mask = sign_mask.wrapping_add(
+                        sign_mask.wrapping_sub(
+                            sign_mask >> ({scalar}::BITS - 1),
+                        ),
+                    );
+
+                    // This NOTs the negative lanes, computes the shift, and then NOTs the
+                    // negative lanes again.
+                    let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+                
+                    // Calculate the mask for bits that overflowed into another lane.
+                    let overflow_mask = ({lower_mask} >> n) & {upper_mask};
+
+                    // Compute the right shift.
+                    {name}(a & !overflow_mask)
+                "
+            )
+        };
+
+        writedoc!(
+            out,
+            "
+                impl {name} {{
+                    /// Performs an unchecked left shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Safety
+                    ///
+                    /// The caller must ensure `n < {bits}`. Failure to do so is undefined behavior.
+                    #[inline(always)]
+                    #[must_use]
+                    #[track_caller]
+                    pub const unsafe fn unchecked_shl(self, n: u32) -> {name} {{
+                        // SAFETY: The caller ensures `n < {bits}`.
+                        unsafe {{ ::core::hint::assert_unchecked(n < {scalar}::BITS) }};
+
+                        // Calculate the mask for bits that overflowed into another lane.
+                        let overflow_mask = ({lower_mask} << n) & {upper_mask};
+
+                        {name}((self.0 << n) & !overflow_mask)
+                    }}
+
+                    /// Performs an unchecked right shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Safety
+                    ///
+                    /// The caller must ensure `n < {bits}`. Failure to do so is undefined behavior.
+                    #[inline(always)]
+                    #[must_use]
+                    #[track_caller]
+                    pub const unsafe fn unchecked_shr(self, n: u32) -> {name} {{
+                        // SAFETY: The caller ensures `n < {bits}`.
+                        unsafe {{ ::core::hint::assert_unchecked(n < {scalar}::BITS) }};
+                        
+                        {shr}
+                    }}
+
+                    /// Performs a wrapping left shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b01).wrapping_shl(1), {name}::splat(0b10));
+                    /// 
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn wrapping_shl(self, n: u32) -> {name} {{
+                        // SAFETY: By masking by the lane bit size we ensure that
+                        //         we're not overflowing when we shift.
+                        unsafe {{ self.unchecked_shl(n & ({scalar}::BITS - 1)) }}
+                    }}
+
+                    /// Performs a wrapping right shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b10).wrapping_shr(1), {name}::splat(0b01));
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn wrapping_shr(self, n: u32) -> {name} {{
+                        // SAFETY: By masking by the lane bit size we ensure that
+                        //         we're not overflowing when we shift.
+                        unsafe {{ self.unchecked_shr(n & ({scalar}::BITS - 1)) }}
+                    }}
+
+                    /// Performs an overflowing left shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b001).overflowing_shl(2), ({name}::splat(0b100), false));
+                    /// assert_eq!({name}::splat(0b001).overflowing_shl({bits}), ({name}::splat(0b001), true));
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn overflowing_shl(self, n: u32) -> ({name}, bool) {{
+                        (self.wrapping_shl(n), n >= {scalar}::BITS)
+                    }}
+
+                    /// Performs an overflowing right shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    ///
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b100).overflowing_shr(2), ({name}::splat(0b001), false));
+                    /// assert_eq!({name}::splat(0b100).overflowing_shr({bits}), ({name}::splat(0b100), true));
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn overflowing_shr(self, n: u32) -> ({name}, bool) {{
+                        (self.wrapping_shr(n), n >= {scalar}::BITS)
+                    }}
+
+                    /// Performs a checked left shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b001).checked_shl(2), Some({name}::splat(0b100)));
+                    /// assert_eq!({name}::splat(0b001).checked_shl({bits}), None);
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn checked_shl(self, n: u32) -> Option<{name}> {{
+                        if n < {scalar}::BITS {{
+                            // SAFETY: We just checked that `n` is in range.
+                            Some(unsafe {{ self.unchecked_shl(n) }})
+                        }} else {{
+                            None
+                        }}
+                    }}
+
+                    /// Performs a checked right shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b100).checked_shr(2), Some({name}::splat(0b001)));
+                    /// assert_eq!({name}::splat(0b100).checked_shr({bits}), None);
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn checked_shr(self, n: u32) -> Option<{name}> {{
+                        if n < {scalar}::BITS {{
+                            // SAFETY: We just checked that `n` is in range.
+                            Some(unsafe {{ self.unchecked_shr(n) }})
+                        }} else {{
+                            None
+                        }}
+                    }}
+
+                    /// Performs an unbounded left shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b001).unbounded_shl(2), {name}::splat(0b100));
+                    /// assert_eq!({name}::splat(0b001).unbounded_shl({bits}), {name}::splat(0));
+                    /// 
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn unbounded_shl(self, n: u32) -> {name} {{
+                        if n < {scalar}::BITS {{
+                            // SAFETY: We just checked that `n` is in range.
+                            unsafe {{ self.unchecked_shl(n) }}
+                        }} else {{
+                            {name}::splat(0)
+                        }}
+                    }}
+
+                    /// Performs an unbounded right shift on every [`{scalar}`] lane.
+                    ///
+                    /// # Examples
+                    ///
+                    /// Basic usage:
+                    ///
+                    /// ```
+                    /// use swario::*;
+                    ///
+                    /// assert_eq!({name}::splat(0b100).unbounded_shr(2), {name}::splat(0b001));
+                    /// assert_eq!({name}::splat(0b100).unbounded_shr({bits}), {name}::splat(0));
+                    ///
+                    /// ```
+                    #[inline(always)]
+                    #[must_use]
+                    pub const fn unbounded_shr(self, n: u32) -> {name} {{
+                        if n < {scalar}::BITS {{
+                            // SAFETY: We just checked that `n` is in range.
+                            unsafe {{ self.unchecked_shr(n) }}
+                        }} else {{
+                            {name}::splat(0)
+                        }}
+                    }}
+                }}   
+            "
+        )?;
 
         Ok(())
     }
 }
+
+// const A: u16 = 0x0202u16.wrapping_shr(2).wrapping_sub(0x0101);
+// const B: u16 = 0xFF00u16.wrapping_shr(2) & 0x00FF;

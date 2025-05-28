@@ -65,9 +65,10 @@ fn main() -> anyhow::Result<()> {
                 "
                     /// Vectors containing [`prim@{s}`] elements.
                     pub mod {s};
-
                     #[doc(inline)]
                     pub use {s}::*;
+
+
                 "
             )?;
         }
