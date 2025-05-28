@@ -538,8 +538,8 @@ impl I64x2 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000000000000000FFFFFFFFFFFFFFFF_u128 >> n)
-            & 0xFFFFFFFFFFFFFFFF0000000000000000_u128;
+        let overflow_mask = (0xFFFFFFFFFFFFFFFF0000000000000000_u128 >> n)
+            & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
 
         // Compute the right shift.
         I64x2(a & !overflow_mask)

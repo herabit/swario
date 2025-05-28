@@ -537,7 +537,7 @@ impl I8x2 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF_u16 >> n) & 0xFF00_u16;
+        let overflow_mask = (0xFF00_u16 >> n) & 0x00FF_u16;
 
         // Compute the right shift.
         I8x2(a & !overflow_mask)
@@ -1255,7 +1255,7 @@ impl I8x4 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF00FF_u32 >> n) & 0xFF00FF00_u32;
+        let overflow_mask = (0xFF00FF00_u32 >> n) & 0x00FF00FF_u32;
 
         // Compute the right shift.
         I8x4(a & !overflow_mask)
@@ -1973,7 +1973,7 @@ impl I8x8 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF00FF00FF00FF_u64 >> n) & 0xFF00FF00FF00FF00_u64;
+        let overflow_mask = (0xFF00FF00FF00FF00_u64 >> n) & 0x00FF00FF00FF00FF_u64;
 
         // Compute the right shift.
         I8x8(a & !overflow_mask)
@@ -2709,8 +2709,8 @@ impl I8x16 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF00FF00FF00FF00FF00FF00FF00FF_u128 >> n)
-            & 0xFF00FF00FF00FF00FF00FF00FF00FF00_u128;
+        let overflow_mask = (0xFF00FF00FF00FF00FF00FF00FF00FF00_u128 >> n)
+            & 0x00FF00FF00FF00FF00FF00FF00FF00FF_u128;
 
         // Compute the right shift.
         I8x16(a & !overflow_mask)

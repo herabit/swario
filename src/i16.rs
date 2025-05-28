@@ -537,7 +537,7 @@ impl I16x2 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF_u32 >> n) & 0xFFFF0000_u32;
+        let overflow_mask = (0xFFFF0000_u32 >> n) & 0x0000FFFF_u32;
 
         // Compute the right shift.
         I16x2(a & !overflow_mask)
@@ -1255,7 +1255,7 @@ impl I16x4 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF0000FFFF_u64 >> n) & 0xFFFF0000FFFF0000_u64;
+        let overflow_mask = (0xFFFF0000FFFF0000_u64 >> n) & 0x0000FFFF0000FFFF_u64;
 
         // Compute the right shift.
         I16x4(a & !overflow_mask)
@@ -1974,8 +1974,8 @@ impl I16x8 {
         let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF0000FFFF0000FFFF0000FFFF_u128 >> n)
-            & 0xFFFF0000FFFF0000FFFF0000FFFF0000_u128;
+        let overflow_mask = (0xFFFF0000FFFF0000FFFF0000FFFF0000_u128 >> n)
+            & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
 
         // Compute the right shift.
         I16x8(a & !overflow_mask)

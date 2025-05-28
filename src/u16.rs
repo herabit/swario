@@ -517,7 +517,7 @@ impl U16x2 {
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF_u32 >> n) & 0xFFFF0000_u32;
+        let overflow_mask = (0xFFFF0000_u32 >> n) & 0x0000FFFF_u32;
 
         U16x2(self.0 >> n & !overflow_mask)
     }
@@ -1214,7 +1214,7 @@ impl U16x4 {
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF0000FFFF_u64 >> n) & 0xFFFF0000FFFF0000_u64;
+        let overflow_mask = (0xFFFF0000FFFF0000_u64 >> n) & 0x0000FFFF0000FFFF_u64;
 
         U16x4(self.0 >> n & !overflow_mask)
     }
@@ -1912,8 +1912,8 @@ impl U16x8 {
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
         // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF0000FFFF0000FFFF0000FFFF_u128 >> n)
-            & 0xFFFF0000FFFF0000FFFF0000FFFF0000_u128;
+        let overflow_mask = (0xFFFF0000FFFF0000FFFF0000FFFF0000_u128 >> n)
+            & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
 
         U16x8(self.0 >> n & !overflow_mask)
     }
