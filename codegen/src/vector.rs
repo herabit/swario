@@ -806,7 +806,7 @@ impl Vector {
             formatdoc!(
                 "
                     // Calculate the mask for bits that overflowed into another lane.
-                    let overflow_mask = ({lower_mask} >> n) & {upper_mask};
+                    let overflow_mask = ({upper_mask} >> n) & {lower_mask};
 
                     {name}(self.0 >> n & !overflow_mask)
                 "
@@ -829,7 +829,7 @@ impl Vector {
                     let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
                 
                     // Calculate the mask for bits that overflowed into another lane.
-                    let overflow_mask = ({lower_mask} >> n) & {upper_mask};
+                    let overflow_mask = ({upper_mask} >> n) & {lower_mask};
 
                     // Compute the right shift.
                     {name}(a & !overflow_mask)
