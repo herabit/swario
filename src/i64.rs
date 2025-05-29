@@ -12,10 +12,12 @@
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct I64x2(
@@ -160,7 +162,7 @@ impl I64x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(I64x2::LSB, I64x2::splat(0x0000000000000001));
+    /// assert_eq!(I64x2::LSB, I64x2::splat(0x0000000000000001_i64));
     ///
     /// ```
     pub const LSB: I64x2 = I64x2::splat(1 << 0);
@@ -209,6 +211,8 @@ impl I64x2 {
     /// use swario::*;
     ///
     /// assert_eq!(I64x2::NEG_ONE, I64x2::splat(-1));
+    ///
+    /// ```
     pub const NEG_ONE: I64x2 = I64x2::splat(-1);
 }
 impl I64x2 {
@@ -508,11 +512,14 @@ impl I64x2 {
         // SAFETY: The caller ensures `n < 64`.
         unsafe { ::core::hint::assert_unchecked(n < i64::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000000000000000FFFFFFFFFFFFFFFF_u128 << n)
-            & 0xFFFFFFFFFFFFFFFF0000000000000000_u128;
+        // Calculate the mask for the bits we want to keep.
+        let mask = !(0x80000000000000008000000000000000_u128 >> i64::BITS - 1 - n)
+            .wrapping_sub(0x00000000000000010000000000000001_u128);
 
-        I64x2((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        I64x2(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`i64`] lane.
@@ -527,22 +534,39 @@ impl I64x2 {
         // SAFETY: The caller ensures `n < 64`.
         unsafe { ::core::hint::assert_unchecked(n < i64::BITS) };
 
-        // Get a mask of the sign bits.
-        let sign_mask = self.0 & I64x2::MSB.0;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask = (0x00000000000000020000000000000002_u128 << i64::BITS - 1 - n)
+            .wrapping_sub(0x00000000000000010000000000000001_u128);
 
-        // Get a mask of the negative lanes.
-        let neg_mask = sign_mask.wrapping_add(sign_mask.wrapping_sub(sign_mask >> (i64::BITS - 1)));
+        // Perform a logical right shift.
+        let logical = (self.0 >> n) & mask;
 
-        // This NOTs the negative lanes, computes the shift, and then NOTs the
-        // negative lanes again.
-        let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        // Calculate the sign mask.
+        let sign_mask = self.0 & 0x80000000000000008000000000000000_u128;
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFFFFFFFFFFFFFFFF0000000000000000_u128 >> n)
-            & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
+        // Calculate the sign extension.
+        //
+        // This essentially calculates a vector where the leading `n` bits of each lane
+        // are all set to the sign bit of the source lane.
+        let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-        // Compute the right shift.
-        I64x2(a & !overflow_mask)
+        // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+        //
+        //         We know this because `logical` is the result of a zero-extended right shift
+        //         on all of the lanes.
+        //
+        //         Since we know none of that none of the bits overlap, then the sum calculation
+        //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+        //         can only occur if both bits are `1`.
+        I64x2(unsafe { logical.unchecked_add(sign_ext) })
     }
 
     /// Performs a wrapping left shift on every [`i64`] lane.

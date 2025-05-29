@@ -12,10 +12,12 @@
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct U16x2(
@@ -160,7 +162,7 @@ impl U16x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::LSB, U16x2::splat(0x0001));
+    /// assert_eq!(U16x2::LSB, U16x2::splat(0x0001_u16));
     ///
     /// ```
     pub const LSB: U16x2 = U16x2::splat(1 << 0);
@@ -172,7 +174,7 @@ impl U16x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x2::MSB, U16x2::splat(0x8000));
+    /// assert_eq!(U16x2::MSB, U16x2::splat(0x8000_u16));
     ///
     /// ```
     pub const MSB: U16x2 = U16x2::splat(1 << (u16::BITS - 1));
@@ -498,10 +500,13 @@ impl U16x2 {
         // SAFETY: The caller ensures `n < 16`.
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF_u32 << n) & 0xFFFF0000_u32;
+        // Calculate the mask for the bits we want to keep.
+        let mask = !(0x80008000_u32 >> u16::BITS - 1 - n).wrapping_sub(0x00010001_u32);
 
-        U16x2((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        U16x2(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`u16`] lane.
@@ -516,10 +521,19 @@ impl U16x2 {
         // SAFETY: The caller ensures `n < 16`.
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFFFF0000_u32 >> n) & 0x0000FFFF_u32;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask = (0x00020002_u32 << u16::BITS - 1 - n).wrapping_sub(0x00010001_u32);
 
-        U16x2(self.0 >> n & !overflow_mask)
+        // Perform a logical right shift.
+        U16x2((self.0 >> n) & mask)
     }
 
     /// Performs a wrapping left shift on every [`u16`] lane.
@@ -709,10 +723,12 @@ impl U16x2 {
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct U16x4(
@@ -857,7 +873,7 @@ impl U16x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::LSB, U16x4::splat(0x0001));
+    /// assert_eq!(U16x4::LSB, U16x4::splat(0x0001_u16));
     ///
     /// ```
     pub const LSB: U16x4 = U16x4::splat(1 << 0);
@@ -869,7 +885,7 @@ impl U16x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x4::MSB, U16x4::splat(0x8000));
+    /// assert_eq!(U16x4::MSB, U16x4::splat(0x8000_u16));
     ///
     /// ```
     pub const MSB: U16x4 = U16x4::splat(1 << (u16::BITS - 1));
@@ -1195,10 +1211,14 @@ impl U16x4 {
         // SAFETY: The caller ensures `n < 16`.
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF0000FFFF_u64 << n) & 0xFFFF0000FFFF0000_u64;
+        // Calculate the mask for the bits we want to keep.
+        let mask =
+            !(0x8000800080008000_u64 >> u16::BITS - 1 - n).wrapping_sub(0x0001000100010001_u64);
 
-        U16x4((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        U16x4(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`u16`] lane.
@@ -1213,10 +1233,20 @@ impl U16x4 {
         // SAFETY: The caller ensures `n < 16`.
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFFFF0000FFFF0000_u64 >> n) & 0x0000FFFF0000FFFF_u64;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask =
+            (0x0002000200020002_u64 << u16::BITS - 1 - n).wrapping_sub(0x0001000100010001_u64);
 
-        U16x4(self.0 >> n & !overflow_mask)
+        // Perform a logical right shift.
+        U16x4((self.0 >> n) & mask)
     }
 
     /// Performs a wrapping left shift on every [`u16`] lane.
@@ -1406,10 +1436,12 @@ impl U16x4 {
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct U16x8(
@@ -1554,7 +1586,7 @@ impl U16x8 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::LSB, U16x8::splat(0x0001));
+    /// assert_eq!(U16x8::LSB, U16x8::splat(0x0001_u16));
     ///
     /// ```
     pub const LSB: U16x8 = U16x8::splat(1 << 0);
@@ -1566,7 +1598,7 @@ impl U16x8 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(U16x8::MSB, U16x8::splat(0x8000));
+    /// assert_eq!(U16x8::MSB, U16x8::splat(0x8000_u16));
     ///
     /// ```
     pub const MSB: U16x8 = U16x8::splat(1 << (u16::BITS - 1));
@@ -1892,11 +1924,14 @@ impl U16x8 {
         // SAFETY: The caller ensures `n < 16`.
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x0000FFFF0000FFFF0000FFFF0000FFFF_u128 << n)
-            & 0xFFFF0000FFFF0000FFFF0000FFFF0000_u128;
+        // Calculate the mask for the bits we want to keep.
+        let mask = !(0x80008000800080008000800080008000_u128 >> u16::BITS - 1 - n)
+            .wrapping_sub(0x00010001000100010001000100010001_u128);
 
-        U16x8((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        U16x8(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`u16`] lane.
@@ -1911,11 +1946,20 @@ impl U16x8 {
         // SAFETY: The caller ensures `n < 16`.
         unsafe { ::core::hint::assert_unchecked(n < u16::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFFFF0000FFFF0000FFFF0000FFFF0000_u128 >> n)
-            & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask = (0x00020002000200020002000200020002_u128 << u16::BITS - 1 - n)
+            .wrapping_sub(0x00010001000100010001000100010001_u128);
 
-        U16x8(self.0 >> n & !overflow_mask)
+        // Perform a logical right shift.
+        U16x8((self.0 >> n) & mask)
     }
 
     /// Performs a wrapping left shift on every [`u16`] lane.

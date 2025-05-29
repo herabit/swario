@@ -12,10 +12,12 @@
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct I8x2(
@@ -160,7 +162,7 @@ impl I8x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(I8x2::LSB, I8x2::splat(0x01));
+    /// assert_eq!(I8x2::LSB, I8x2::splat(0x01_i8));
     ///
     /// ```
     pub const LSB: I8x2 = I8x2::splat(1 << 0);
@@ -209,6 +211,8 @@ impl I8x2 {
     /// use swario::*;
     ///
     /// assert_eq!(I8x2::NEG_ONE, I8x2::splat(-1));
+    ///
+    /// ```
     pub const NEG_ONE: I8x2 = I8x2::splat(-1);
 }
 impl I8x2 {
@@ -508,10 +512,13 @@ impl I8x2 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF_u16 << n) & 0xFF00_u16;
+        // Calculate the mask for the bits we want to keep.
+        let mask = !(0x8080_u16 >> i8::BITS - 1 - n).wrapping_sub(0x0101_u16);
 
-        I8x2((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        I8x2(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`i8`] lane.
@@ -526,21 +533,38 @@ impl I8x2 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Get a mask of the sign bits.
-        let sign_mask = self.0 & I8x2::MSB.0;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask = (0x0202_u16 << i8::BITS - 1 - n).wrapping_sub(0x0101_u16);
 
-        // Get a mask of the negative lanes.
-        let neg_mask = sign_mask.wrapping_add(sign_mask.wrapping_sub(sign_mask >> (i8::BITS - 1)));
+        // Perform a logical right shift.
+        let logical = (self.0 >> n) & mask;
 
-        // This NOTs the negative lanes, computes the shift, and then NOTs the
-        // negative lanes again.
-        let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        // Calculate the sign mask.
+        let sign_mask = self.0 & 0x8080_u16;
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFF00_u16 >> n) & 0x00FF_u16;
+        // Calculate the sign extension.
+        //
+        // This essentially calculates a vector where the leading `n` bits of each lane
+        // are all set to the sign bit of the source lane.
+        let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-        // Compute the right shift.
-        I8x2(a & !overflow_mask)
+        // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+        //
+        //         We know this because `logical` is the result of a zero-extended right shift
+        //         on all of the lanes.
+        //
+        //         Since we know none of that none of the bits overlap, then the sum calculation
+        //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+        //         can only occur if both bits are `1`.
+        I8x2(unsafe { logical.unchecked_add(sign_ext) })
     }
 
     /// Performs a wrapping left shift on every [`i8`] lane.
@@ -730,10 +754,12 @@ impl I8x2 {
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct I8x4(
@@ -878,7 +904,7 @@ impl I8x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(I8x4::LSB, I8x4::splat(0x01));
+    /// assert_eq!(I8x4::LSB, I8x4::splat(0x01_i8));
     ///
     /// ```
     pub const LSB: I8x4 = I8x4::splat(1 << 0);
@@ -927,6 +953,8 @@ impl I8x4 {
     /// use swario::*;
     ///
     /// assert_eq!(I8x4::NEG_ONE, I8x4::splat(-1));
+    ///
+    /// ```
     pub const NEG_ONE: I8x4 = I8x4::splat(-1);
 }
 impl I8x4 {
@@ -1226,10 +1254,13 @@ impl I8x4 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF00FF_u32 << n) & 0xFF00FF00_u32;
+        // Calculate the mask for the bits we want to keep.
+        let mask = !(0x80808080_u32 >> i8::BITS - 1 - n).wrapping_sub(0x01010101_u32);
 
-        I8x4((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        I8x4(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`i8`] lane.
@@ -1244,21 +1275,38 @@ impl I8x4 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Get a mask of the sign bits.
-        let sign_mask = self.0 & I8x4::MSB.0;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask = (0x02020202_u32 << i8::BITS - 1 - n).wrapping_sub(0x01010101_u32);
 
-        // Get a mask of the negative lanes.
-        let neg_mask = sign_mask.wrapping_add(sign_mask.wrapping_sub(sign_mask >> (i8::BITS - 1)));
+        // Perform a logical right shift.
+        let logical = (self.0 >> n) & mask;
 
-        // This NOTs the negative lanes, computes the shift, and then NOTs the
-        // negative lanes again.
-        let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        // Calculate the sign mask.
+        let sign_mask = self.0 & 0x80808080_u32;
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFF00FF00_u32 >> n) & 0x00FF00FF_u32;
+        // Calculate the sign extension.
+        //
+        // This essentially calculates a vector where the leading `n` bits of each lane
+        // are all set to the sign bit of the source lane.
+        let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-        // Compute the right shift.
-        I8x4(a & !overflow_mask)
+        // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+        //
+        //         We know this because `logical` is the result of a zero-extended right shift
+        //         on all of the lanes.
+        //
+        //         Since we know none of that none of the bits overlap, then the sum calculation
+        //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+        //         can only occur if both bits are `1`.
+        I8x4(unsafe { logical.unchecked_add(sign_ext) })
     }
 
     /// Performs a wrapping left shift on every [`i8`] lane.
@@ -1448,10 +1496,12 @@ impl I8x4 {
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct I8x8(
@@ -1596,7 +1646,7 @@ impl I8x8 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(I8x8::LSB, I8x8::splat(0x01));
+    /// assert_eq!(I8x8::LSB, I8x8::splat(0x01_i8));
     ///
     /// ```
     pub const LSB: I8x8 = I8x8::splat(1 << 0);
@@ -1645,6 +1695,8 @@ impl I8x8 {
     /// use swario::*;
     ///
     /// assert_eq!(I8x8::NEG_ONE, I8x8::splat(-1));
+    ///
+    /// ```
     pub const NEG_ONE: I8x8 = I8x8::splat(-1);
 }
 impl I8x8 {
@@ -1944,10 +1996,14 @@ impl I8x8 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF00FF00FF00FF_u64 << n) & 0xFF00FF00FF00FF00_u64;
+        // Calculate the mask for the bits we want to keep.
+        let mask =
+            !(0x8080808080808080_u64 >> i8::BITS - 1 - n).wrapping_sub(0x0101010101010101_u64);
 
-        I8x8((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        I8x8(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`i8`] lane.
@@ -1962,21 +2018,39 @@ impl I8x8 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Get a mask of the sign bits.
-        let sign_mask = self.0 & I8x8::MSB.0;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask =
+            (0x0202020202020202_u64 << i8::BITS - 1 - n).wrapping_sub(0x0101010101010101_u64);
 
-        // Get a mask of the negative lanes.
-        let neg_mask = sign_mask.wrapping_add(sign_mask.wrapping_sub(sign_mask >> (i8::BITS - 1)));
+        // Perform a logical right shift.
+        let logical = (self.0 >> n) & mask;
 
-        // This NOTs the negative lanes, computes the shift, and then NOTs the
-        // negative lanes again.
-        let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        // Calculate the sign mask.
+        let sign_mask = self.0 & 0x8080808080808080_u64;
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFF00FF00FF00FF00_u64 >> n) & 0x00FF00FF00FF00FF_u64;
+        // Calculate the sign extension.
+        //
+        // This essentially calculates a vector where the leading `n` bits of each lane
+        // are all set to the sign bit of the source lane.
+        let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-        // Compute the right shift.
-        I8x8(a & !overflow_mask)
+        // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+        //
+        //         We know this because `logical` is the result of a zero-extended right shift
+        //         on all of the lanes.
+        //
+        //         Since we know none of that none of the bits overlap, then the sum calculation
+        //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+        //         can only occur if both bits are `1`.
+        I8x8(unsafe { logical.unchecked_add(sign_ext) })
     }
 
     /// Performs a wrapping left shift on every [`i8`] lane.
@@ -2166,10 +2240,12 @@ impl I8x8 {
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct I8x16(
@@ -2314,7 +2390,7 @@ impl I8x16 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(I8x16::LSB, I8x16::splat(0x01));
+    /// assert_eq!(I8x16::LSB, I8x16::splat(0x01_i8));
     ///
     /// ```
     pub const LSB: I8x16 = I8x16::splat(1 << 0);
@@ -2363,6 +2439,8 @@ impl I8x16 {
     /// use swario::*;
     ///
     /// assert_eq!(I8x16::NEG_ONE, I8x16::splat(-1));
+    ///
+    /// ```
     pub const NEG_ONE: I8x16 = I8x16::splat(-1);
 }
 impl I8x16 {
@@ -2679,11 +2757,14 @@ impl I8x16 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00FF00FF00FF00FF00FF00FF00FF00FF_u128 << n)
-            & 0xFF00FF00FF00FF00FF00FF00FF00FF00_u128;
+        // Calculate the mask for the bits we want to keep.
+        let mask = !(0x80808080808080808080808080808080_u128 >> i8::BITS - 1 - n)
+            .wrapping_sub(0x01010101010101010101010101010101_u128);
 
-        I8x16((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        I8x16(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`i8`] lane.
@@ -2698,22 +2779,39 @@ impl I8x16 {
         // SAFETY: The caller ensures `n < 8`.
         unsafe { ::core::hint::assert_unchecked(n < i8::BITS) };
 
-        // Get a mask of the sign bits.
-        let sign_mask = self.0 & I8x16::MSB.0;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask = (0x02020202020202020202020202020202_u128 << i8::BITS - 1 - n)
+            .wrapping_sub(0x01010101010101010101010101010101_u128);
 
-        // Get a mask of the negative lanes.
-        let neg_mask = sign_mask.wrapping_add(sign_mask.wrapping_sub(sign_mask >> (i8::BITS - 1)));
+        // Perform a logical right shift.
+        let logical = (self.0 >> n) & mask;
 
-        // This NOTs the negative lanes, computes the shift, and then NOTs the
-        // negative lanes again.
-        let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        // Calculate the sign mask.
+        let sign_mask = self.0 & 0x80808080808080808080808080808080_u128;
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFF00FF00FF00FF00FF00FF00FF00FF00_u128 >> n)
-            & 0x00FF00FF00FF00FF00FF00FF00FF00FF_u128;
+        // Calculate the sign extension.
+        //
+        // This essentially calculates a vector where the leading `n` bits of each lane
+        // are all set to the sign bit of the source lane.
+        let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-        // Compute the right shift.
-        I8x16(a & !overflow_mask)
+        // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+        //
+        //         We know this because `logical` is the result of a zero-extended right shift
+        //         on all of the lanes.
+        //
+        //         Since we know none of that none of the bits overlap, then the sum calculation
+        //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+        //         can only occur if both bits are `1`.
+        I8x16(unsafe { logical.unchecked_add(sign_ext) })
     }
 
     /// Performs a wrapping left shift on every [`i8`] lane.

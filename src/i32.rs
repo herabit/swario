@@ -12,10 +12,12 @@
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct I32x2(
@@ -160,7 +162,7 @@ impl I32x2 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(I32x2::LSB, I32x2::splat(0x00000001));
+    /// assert_eq!(I32x2::LSB, I32x2::splat(0x00000001_i32));
     ///
     /// ```
     pub const LSB: I32x2 = I32x2::splat(1 << 0);
@@ -209,6 +211,8 @@ impl I32x2 {
     /// use swario::*;
     ///
     /// assert_eq!(I32x2::NEG_ONE, I32x2::splat(-1));
+    ///
+    /// ```
     pub const NEG_ONE: I32x2 = I32x2::splat(-1);
 }
 impl I32x2 {
@@ -508,10 +512,14 @@ impl I32x2 {
         // SAFETY: The caller ensures `n < 32`.
         unsafe { ::core::hint::assert_unchecked(n < i32::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00000000FFFFFFFF_u64 << n) & 0xFFFFFFFF00000000_u64;
+        // Calculate the mask for the bits we want to keep.
+        let mask =
+            !(0x8000000080000000_u64 >> i32::BITS - 1 - n).wrapping_sub(0x0000000100000001_u64);
 
-        I32x2((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        I32x2(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`i32`] lane.
@@ -526,21 +534,39 @@ impl I32x2 {
         // SAFETY: The caller ensures `n < 32`.
         unsafe { ::core::hint::assert_unchecked(n < i32::BITS) };
 
-        // Get a mask of the sign bits.
-        let sign_mask = self.0 & I32x2::MSB.0;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask =
+            (0x0000000200000002_u64 << i32::BITS - 1 - n).wrapping_sub(0x0000000100000001_u64);
 
-        // Get a mask of the negative lanes.
-        let neg_mask = sign_mask.wrapping_add(sign_mask.wrapping_sub(sign_mask >> (i32::BITS - 1)));
+        // Perform a logical right shift.
+        let logical = (self.0 >> n) & mask;
 
-        // This NOTs the negative lanes, computes the shift, and then NOTs the
-        // negative lanes again.
-        let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        // Calculate the sign mask.
+        let sign_mask = self.0 & 0x8000000080000000_u64;
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFFFFFFFF00000000_u64 >> n) & 0x00000000FFFFFFFF_u64;
+        // Calculate the sign extension.
+        //
+        // This essentially calculates a vector where the leading `n` bits of each lane
+        // are all set to the sign bit of the source lane.
+        let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-        // Compute the right shift.
-        I32x2(a & !overflow_mask)
+        // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+        //
+        //         We know this because `logical` is the result of a zero-extended right shift
+        //         on all of the lanes.
+        //
+        //         Since we know none of that none of the bits overlap, then the sum calculation
+        //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+        //         can only occur if both bits are `1`.
+        I32x2(unsafe { logical.unchecked_add(sign_ext) })
     }
 
     /// Performs a wrapping left shift on every [`i32`] lane.
@@ -730,10 +756,12 @@ impl I32x2 {
 )]
 #[cfg_attr(
     feature = "zerocopy",
-    ::zerocopy::FromBytes,
-    ::zerocopy::IntoBytes,
-    ::zerocopy::KnownLayout,
-    ::zerocopy::Immutable
+    derive(
+        ::zerocopy::FromBytes,
+        ::zerocopy::IntoBytes,
+        ::zerocopy::KnownLayout,
+        ::zerocopy::Immutable
+    )
 )]
 #[repr(transparent)]
 pub struct I32x4(
@@ -878,7 +906,7 @@ impl I32x4 {
     /// ```
     /// use swario::*;
     ///
-    /// assert_eq!(I32x4::LSB, I32x4::splat(0x00000001));
+    /// assert_eq!(I32x4::LSB, I32x4::splat(0x00000001_i32));
     ///
     /// ```
     pub const LSB: I32x4 = I32x4::splat(1 << 0);
@@ -927,6 +955,8 @@ impl I32x4 {
     /// use swario::*;
     ///
     /// assert_eq!(I32x4::NEG_ONE, I32x4::splat(-1));
+    ///
+    /// ```
     pub const NEG_ONE: I32x4 = I32x4::splat(-1);
 }
 impl I32x4 {
@@ -1226,11 +1256,14 @@ impl I32x4 {
         // SAFETY: The caller ensures `n < 32`.
         unsafe { ::core::hint::assert_unchecked(n < i32::BITS) };
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0x00000000FFFFFFFF00000000FFFFFFFF_u128 << n)
-            & 0xFFFFFFFF00000000FFFFFFFF00000000_u128;
+        // Calculate the mask for the bits we want to keep.
+        let mask = !(0x80000000800000008000000080000000_u128 >> i32::BITS - 1 - n)
+            .wrapping_sub(0x00000001000000010000000100000001_u128);
 
-        I32x4((self.0 << n) & !overflow_mask)
+        // Calculate the left shift.
+        let shifted = self.0 << n;
+
+        I32x4(shifted & mask)
     }
 
     /// Performs an unchecked right shift on every [`i32`] lane.
@@ -1245,22 +1278,39 @@ impl I32x4 {
         // SAFETY: The caller ensures `n < 32`.
         unsafe { ::core::hint::assert_unchecked(n < i32::BITS) };
 
-        // Get a mask of the sign bits.
-        let sign_mask = self.0 & I32x4::MSB.0;
+        // Calculate the mask for the bits we want to keep.
+        //
+        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+        //
+        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       when doing the wrapping subtraction.
+        //
+        //       There *may* be a way around this, but I am unaware of how. Until I figure
+        //       that out, this seems to be the fastest way of calculating the mask.
+        let mask = (0x00000002000000020000000200000002_u128 << i32::BITS - 1 - n)
+            .wrapping_sub(0x00000001000000010000000100000001_u128);
 
-        // Get a mask of the negative lanes.
-        let neg_mask = sign_mask.wrapping_add(sign_mask.wrapping_sub(sign_mask >> (i32::BITS - 1)));
+        // Perform a logical right shift.
+        let logical = (self.0 >> n) & mask;
 
-        // This NOTs the negative lanes, computes the shift, and then NOTs the
-        // negative lanes again.
-        let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        // Calculate the sign mask.
+        let sign_mask = self.0 & 0x80000000800000008000000080000000_u128;
 
-        // Calculate the mask for bits that overflowed into another lane.
-        let overflow_mask = (0xFFFFFFFF00000000FFFFFFFF00000000_u128 >> n)
-            & 0x00000000FFFFFFFF00000000FFFFFFFF_u128;
+        // Calculate the sign extension.
+        //
+        // This essentially calculates a vector where the leading `n` bits of each lane
+        // are all set to the sign bit of the source lane.
+        let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-        // Compute the right shift.
-        I32x4(a & !overflow_mask)
+        // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+        //
+        //         We know this because `logical` is the result of a zero-extended right shift
+        //         on all of the lanes.
+        //
+        //         Since we know none of that none of the bits overlap, then the sum calculation
+        //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+        //         can only occur if both bits are `1`.
+        I32x4(unsafe { logical.unchecked_add(sign_ext) })
     }
 
     /// Performs a wrapping left shift on every [`i32`] lane.

@@ -81,11 +81,13 @@ impl Vector {
                 )]
                 #[cfg_attr(\
                     feature = \"zerocopy\", \
+                    derive(\
                     ::zerocopy::FromBytes, \
                     ::zerocopy::IntoBytes, \
                     ::zerocopy::KnownLayout, \
                     ::zerocopy::Immutable\
                     {unaligned}\
+                    )\
                 )]
                 #[repr(transparent)]
                 pub struct {name}(
@@ -167,38 +169,37 @@ impl Vector {
             name,
         } = self;
 
-        let repr_width = repr.width().context("invalid repr")?;
-        let scalar_width = scalar.width().context("invalid scalar")?;
+        let repr_bits = repr.width().unwrap();
+        let scalar_bits = scalar.width().unwrap();
         let min = Scalar::min(*scalar).unwrap();
         let max = Scalar::max(*scalar).unwrap();
 
         let lsb = {
-            let mut lsb = String::from("0x");
+            let nibbles = (0..scalar_bits.get() / 4)
+                .map(|n| n == 0)
+                .map(|is_lsb| if is_lsb { "1" } else { "0" })
+                .rev();
 
-            for _ in 0..(scalar_width.get() / 4) - 1 {
-                lsb.push_str("0");
-            }
-
-            lsb.push_str("1");
-            lsb
+            iter::once("0x")
+                .chain(nibbles)
+                .chain(["_", scalar.name()])
+                .collect::<String>()
         };
 
         let msb = {
-            let mut msb = String::from("0x8");
+            let nibbles = (0..scalar_bits.get() / 4)
+                .map(|n| n == 0)
+                .map(|is_msb| if is_msb { "8" } else { "0" });
 
-            for _ in 0..(scalar_width.get() / 4) - 1 {
-                msb.push_str("0");
-            }
+            let cast = [" as ", scalar.name()]
+                .into_iter()
+                .skip(if scalar.is_signed() { 0 } else { 2 });
 
-            // For signed types we need to insert a cast to avoid an `overflowing_literals` lint.
-            if scalar.is_signed() {
-                msb.push_str("_");
-                msb.push_str(scalar.unsigned().name());
-                msb.push_str(" as ");
-                msb.push_str(scalar.name());
-            }
-
-            msb
+            iter::once("0x")
+                .chain(nibbles)
+                .chain(["_", scalar.unsigned().name()])
+                .chain(cast)
+                .collect::<String>()
         };
 
         let neg_one = if scalar.is_signed() {
@@ -212,6 +213,8 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::NEG_ONE, {name}::splat(-1));
+                    /// 
+                    /// ```
                     pub const NEG_ONE: {name} = {name}::splat(-1);
 
                 "
@@ -226,7 +229,7 @@ impl Vector {
             out,
             "
                 impl {name} {{
-                    /// The size of this vector in bits ({repr_width}-bit).
+                    /// The size of this vector in bits ({repr_bits}-bit).
                     ///
                     /// # Examples
                     ///
@@ -236,12 +239,12 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::BITS, {repr}::BITS);
-                    /// assert_eq!({name}::BITS, {repr_width});
+                    /// assert_eq!({name}::BITS, {repr_bits});
                     /// 
                     /// ```
                     pub const BITS: u32 = {repr}::BITS;
 
-                    /// The size of this vector's lanes in bits ({scalar_width}-bit).
+                    /// The size of this vector's lanes in bits ({scalar_bits}-bit).
                     ///
                     /// # Examples
                     ///
@@ -251,7 +254,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::LANE_BITS, {scalar}::BITS);
-                    /// assert_eq!({name}::LANE_BITS, {scalar_width});
+                    /// assert_eq!({name}::LANE_BITS, {scalar_bits});
                     /// 
                     /// ```
                     pub const LANE_BITS: u32 = {scalar}::BITS;
@@ -776,12 +779,38 @@ impl Vector {
 
         let bits = scalar.width().unwrap();
 
-        let upper_mask = {
-            let nibbles = (0..lanes.get())
-                .rev()
-                .map(|lane| lane % 2 != 0)
-                .map(|is_upper| if is_upper { "F" } else { "0" })
-                .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
+        // let upper_mask = {
+        //     let nibbles = (0..lanes.get())
+        //         .rev()
+        //         .map(|lane| lane % 2 != 0)
+        //         .map(|is_upper| if is_upper { "F" } else { "0" })
+        //         .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
+
+        //     iter::once("0x")
+        //         .chain(nibbles)
+        //         .chain(["_", repr.name()])
+        //         .collect::<String>()
+        // };
+
+        // let lower_mask = {
+        //     let nibbles = (0..lanes.get())
+        //         .rev()
+        //         .map(|lane| lane % 2 == 0)
+        //         .map(|is_lower| if is_lower { "F" } else { "0" })
+        //         .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
+
+        //     iter::once("0x")
+        //         .chain(nibbles)
+        //         .chain(["_", repr.name()])
+        //         .collect::<String>()
+        // };
+
+        let splat_one = {
+            let nibbles = (0..lanes.get()).flat_map(|_| {
+                (0..bits.get() / 4)
+                    .map(|n| if n == 0 { "1" } else { "0" })
+                    .rev()
+            });
 
             iter::once("0x")
                 .chain(nibbles)
@@ -789,52 +818,89 @@ impl Vector {
                 .collect::<String>()
         };
 
-        let lower_mask = {
-            let nibbles = (0..lanes.get())
-                .rev()
-                .map(|lane| lane % 2 == 0)
-                .map(|is_lower| if is_lower { "F" } else { "0" })
-                .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
+        let splat_two = {
+            let nibbles = (0..lanes.get()).flat_map(|_| {
+                (0..bits.get() / 4)
+                    .map(|n| if n == 0 { "2" } else { "0" })
+                    .rev()
+            });
 
             iter::once("0x")
                 .chain(nibbles)
                 .chain(["_", repr.name()])
                 .collect::<String>()
         };
+
+        let splat_msb = {
+            let nibbles = (0..lanes.get())
+                .flat_map(|_| (0..bits.get() / 4).map(|n| if n == 0 { "8" } else { "0" }));
+
+            iter::once("0x")
+                .chain(nibbles)
+                .chain(["_", repr.name()])
+                .collect::<String>()
+        };
+
+        // let shl_mask = format!("({splat_msb} >> {scalar}::BITS - 1 - n).wrapping_sub({splat_one})");
 
         let shr = if scalar.is_unsigned() {
             formatdoc!(
                 "
-                    // Calculate the mask for bits that overflowed into another lane.
-                    let overflow_mask = ({upper_mask} >> n) & {lower_mask};
-
-                    {name}(self.0 >> n & !overflow_mask)
+                    // Perform a logical right shift.
+                    {name}((self.0 >> n) & mask)
                 "
             )
         } else {
             formatdoc!(
                 "
-                    // Get a mask of the sign bits.
-                    let sign_mask = self.0 & {name}::MSB.0;
+                    // Perform a logical right shift.
+                    let logical = (self.0 >> n) & mask;
 
-                    // Get a mask of the negative lanes.
-                    let neg_mask = sign_mask.wrapping_add(
-                        sign_mask.wrapping_sub(
-                            sign_mask >> ({scalar}::BITS - 1),
-                        ),
-                    );
+                    // Calculate the sign mask.
+                    let sign_mask = self.0 & {splat_msb};
 
-                    // This NOTs the negative lanes, computes the shift, and then NOTs the
-                    // negative lanes again.
-                    let a = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
-                
-                    // Calculate the mask for bits that overflowed into another lane.
-                    let overflow_mask = ({upper_mask} >> n) & {lower_mask};
+                    // Calculate the sign extension.
+                    //
+                    // This essentially calculates a vector where the leading `n` bits of each lane
+                    // are all set to the sign bit of the source lane.
+                    let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
-                    // Compute the right shift.
-                    {name}(a & !overflow_mask)
+                    // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
+                    //
+                    //         We know this because `logical` is the result of a zero-extended right shift
+                    //         on all of the lanes.
+                    //
+                    //         Since we know none of that none of the bits overlap, then the sum calculation
+                    //         can never overflow. As an overflow for any given bit (in unsigned arithmetic)
+                    //         can only occur if both bits are `1`.
+                    {name}(unsafe {{ logical.unchecked_add(sign_ext) }})
                 "
             )
+
+            // formatdoc!(
+            //     "
+            //         // Calculate a mask of the sign bits.
+            //         let sign_mask = self.0 & {splat_msb};
+
+            //         // Calculate a mask of the negative lanes.
+            //         let neg_mask =  sign_mask.wrapping_add(
+            //             sign_mask.wrapping_sub(
+            //                 sign_mask >> {scalar}::BITS - 1,
+            //             ),
+            //         );
+
+            //         // Calculate the shift. This works by NOTing the negative lanes,
+            //         // performing a right shift, and then NOTing the negative lanes
+            //         // again, which performs the sign extension.
+            //         //
+            //         // For non-negative lanes, it's just the same as an unsigned
+            //         // right shift.
+            //         let shifted = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+
+            //         {name}(shifted & mask)
+
+            //     "
+            // )
         };
 
         writedoc!(
@@ -853,10 +919,13 @@ impl Vector {
                         // SAFETY: The caller ensures `n < {bits}`.
                         unsafe {{ ::core::hint::assert_unchecked(n < {scalar}::BITS) }};
 
-                        // Calculate the mask for bits that overflowed into another lane.
-                        let overflow_mask = ({lower_mask} << n) & {upper_mask};
+                        // Calculate the mask for the bits we want to keep.
+                        let mask = !({splat_msb} >> {scalar}::BITS - 1 - n).wrapping_sub({splat_one});
 
-                        {name}((self.0 << n) & !overflow_mask)
+                        // Calculate the left shift.
+                        let shifted = self.0 << n;
+
+                        {name}(shifted & mask)
                     }}
 
                     /// Performs an unchecked right shift on every [`{scalar}`] lane.
@@ -870,6 +939,17 @@ impl Vector {
                     pub const unsafe fn unchecked_shr(self, n: u32) -> {name} {{
                         // SAFETY: The caller ensures `n < {bits}`.
                         unsafe {{ ::core::hint::assert_unchecked(n < {scalar}::BITS) }};
+                    
+                        // Calculate the mask for the bits we want to keep.
+                        //
+                        // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
+                        //
+                        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+                        //       when doing the wrapping subtraction.
+                        //
+                        //       There *may* be a way around this, but I am unaware of how. Until I figure
+                        //       that out, this seems to be the fastest way of calculating the mask.
+                        let mask = ({splat_two} << {scalar}::BITS - 1 - n).wrapping_sub({splat_one});
                         
                         {shr}
                     }}
@@ -1053,6 +1133,3 @@ impl Vector {
         Ok(())
     }
 }
-
-// const A: u16 = 0x0202u16.wrapping_shr(2).wrapping_sub(0x0101);
-// const B: u16 = 0xFF00u16.wrapping_shr(2) & 0x00FF;
