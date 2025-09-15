@@ -31,19 +31,20 @@ impl Vector {
         })
     }
 
-    /// Write all of the definitions and imples for this type.
+    /// Write all of the definitions and impls for this type.
     pub fn write_all(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
         self.define(out)?;
         self.consts(out)?;
+
         self.base(out)?;
+
         self.rotate_lanes(out)?;
         self.shift_lanes(out)?;
+
         self.bitwise(out)?;
         self.shift(out)?;
 
-        self.reduce(out)?;
-
-        // self.map(out)?;
+        self.reduce_bitwise(out)?;
 
         Ok(())
     }
@@ -772,8 +773,10 @@ impl Vector {
         Ok(())
     }
 
-    /// Implements reduction operations. These are only implemented for operators that are commutative and associative, currently anyways.
-    pub fn reduce(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
+    /// Implements reduction operations for bitwise operations.
+    ///
+    /// The fundamental bitwise operations are all commutative and assocaitive.
+    pub fn reduce_bitwise(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
         let Self {
             scalar,
             lanes,
@@ -877,74 +880,6 @@ impl Vector {
             "
         )?;
 
-        // let
-
-        // writedoc!(
-        //     out,
-        //     "
-        //     impl {name} {{
-        //         /// Performs a bitwise AND reduction.
-        //         #[inline(always)]
-        //         #[must_use]
-        //         pub const fn reduce_and(self) -> {scalar} {{
-        //             {reduce_and}
-        //         }}
-
-        //         /// Performs a bitwise OR reduction.
-        //         #[inline(always)]
-        //         #[must_use]
-        //         pub const fn reduce_or(self) -> {scalar} {{
-        //             {reduce_or}
-        //         }}
-        //     }}
-        //     ",
-        //     reduce_and = if lanes.get() == 1 {
-        //         formatdoc!(
-        //             "
-        //                 self.0 as {scalar}
-        //             "
-        //         )
-        //     } else if lanes.get() == 2 {
-        //         formatdoc!(
-        //             "
-        //                 let a = self.0 & {lower_mask};
-        //                 let b = (self.0 >> {scalar}::BITS) & {lower_mask};
-
-        //                (a & b) as {scalar}
-        //             "
-        //         )
-        //     } else if let Some(double_scalar) = scalar.double_width() {
-        //         formatdoc!(
-        //             "
-        //                 let a = self.0 & {lower_mask};
-        //                 let b = (self.0 >> {scalar}::BITS) & {lower_mask};
-
-        //                 crate::{double_scalar}::{double_pascal}x{double_lanes}(a & b).reduce_and() as {scalar}
-        //             ",
-        //             double_pascal = double_scalar.pascal_name(),
-        //             double_lanes = lanes.get() / 2,
-        //         )
-        //     } else {
-        //         String::from("todo!()")
-        //     },
-
-        //     reduce_or = if lanes.get() == 1 {
-        //         formatdoc!(
-        //             "
-        //                 self.0 as {scalar}
-        //             "
-        //         )
-        //     } else if lanes.get() == 2 {
-        //         formatdoc!(
-        //             "
-
-        //             "
-        //         )
-        //     } else {
-        //         String::from("todo!()")
-        //     }
-        // )?;
-
         Ok(())
     }
 
@@ -958,32 +893,6 @@ impl Vector {
         } = self;
 
         let bits = scalar.width().unwrap();
-
-        // let upper_mask = {
-        //     let nibbles = (0..lanes.get())
-        //         .rev()
-        //         .map(|lane| lane % 2 != 0)
-        //         .map(|is_upper| if is_upper { "F" } else { "0" })
-        //         .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
-
-        //     iter::once("0x")
-        //         .chain(nibbles)
-        //         .chain(["_", repr.name()])
-        //         .collect::<String>()
-        // };
-
-        // let lower_mask = {
-        //     let nibbles = (0..lanes.get())
-        //         .rev()
-        //         .map(|lane| lane % 2 == 0)
-        //         .map(|is_lower| if is_lower { "F" } else { "0" })
-        //         .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
-
-        //     iter::once("0x")
-        //         .chain(nibbles)
-        //         .chain(["_", repr.name()])
-        //         .collect::<String>()
-        // };
 
         let splat_one = {
             let nibbles = (0..lanes.get()).flat_map(|_| {
