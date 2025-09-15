@@ -776,6 +776,10 @@ impl Vector {
     /// Implements reduction operations for bitwise operations.
     ///
     /// The fundamental bitwise operations are all commutative and assocaitive.
+    ///
+    /// We utilize `O(log n)` algorithms to meet a balance between code size and
+    /// performance. The `O(log n)` algorithms permit greater parallelism while
+    /// requiring less instructions.
     pub fn reduce_bitwise(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
         let Self {
             scalar,
