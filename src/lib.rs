@@ -37,10 +37,3 @@ pub use i32::*;
 pub mod i64;
 #[doc(inline)]
 pub use i64::*;
-
-#[unsafe(no_mangle)]
-fn logarithmic(x: &mut [U8x4]) {
-    for x in x {
-        *x = U8x4::splat(x.reduce_xor());
-    }
-}
