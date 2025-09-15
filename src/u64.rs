@@ -711,3 +711,44 @@ impl U64x2 {
         }
     }
 }
+
+impl U64x2 {
+    /// Computes a bitwise AND reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_and(self) -> u64 {
+        // Get the two lanes in two separate u128s, and ensure that
+        // each lane's bits fits within the low 64-bits.
+        let a = self.0 & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
+        let b = (self.0 >> u64::BITS) & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
+
+        // Compute the result, and cast to a scalar.
+        ((a & b) as u64) as u64
+    }
+
+    /// Computes a bitwise OR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_or(self) -> u64 {
+        // Get the two lanes in two separate u128s, and ensure that
+        // each lane's bits fits within the low 64-bits.
+        let a = self.0 & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
+        let b = (self.0 >> u64::BITS) & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
+
+        // Compute the result, and cast to a scalar.
+        ((a | b) as u64) as u64
+    }
+
+    /// Computes a bitwise XOR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_xor(self) -> u64 {
+        // Get the two lanes in two separate u128s, and ensure that
+        // each lane's bits fits within the low 64-bits.
+        let a = self.0 & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
+        let b = (self.0 >> u64::BITS) & 0x0000000000000000FFFFFFFFFFFFFFFF_u128;
+
+        // Compute the result, and cast to a scalar.
+        ((a ^ b) as u64) as u64
+    }
+}

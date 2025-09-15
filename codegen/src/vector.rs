@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{iter, num::NonZero};
+use std::{array, iter, num::NonZero};
 
 use anyhow::Context;
 use indoc::{formatdoc, writedoc};
@@ -41,6 +41,10 @@ impl Vector {
         self.bitwise(out)?;
         self.shift(out)?;
 
+        self.reduce(out)?;
+
+        // self.map(out)?;
+
         Ok(())
     }
 
@@ -64,7 +68,7 @@ impl Vector {
             out,
             "
                 /// A {width}-bit SWAR vector containing {lanes} [`{scalar}`]s.
-                /// 
+                ///
                 ///
                 /// # Memory Layout
                 ///
@@ -118,7 +122,7 @@ impl Vector {
                     /// affecting the a given lane's value, just where it is.
                     ///
                     /// ***TODO*** rewrite the above documentation.
-                    pub {repr},  
+                    pub {repr},
                 );
 
                 // We need to ensure that `{name}` is the same size as `[{scalar}; {lanes}]`.
@@ -197,7 +201,7 @@ impl Vector {
 
             iter::once("0x")
                 .chain(nibbles)
-                .chain(["_", scalar.unsigned().name()])
+                .chain(["_", scalar.to_unsigned().unwrap().name()])
                 .chain(cast)
                 .collect::<String>()
         };
@@ -213,7 +217,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::NEG_ONE, {name}::splat(-1));
-                    /// 
+                    ///
                     /// ```
                     pub const NEG_ONE: {name} = {name}::splat(-1);
 
@@ -240,7 +244,7 @@ impl Vector {
                     ///
                     /// assert_eq!({name}::BITS, {repr}::BITS);
                     /// assert_eq!({name}::BITS, {repr_bits});
-                    /// 
+                    ///
                     /// ```
                     pub const BITS: u32 = {repr}::BITS;
 
@@ -255,7 +259,7 @@ impl Vector {
                     ///
                     /// assert_eq!({name}::LANE_BITS, {scalar}::BITS);
                     /// assert_eq!({name}::LANE_BITS, {scalar_bits});
-                    /// 
+                    ///
                     /// ```
                     pub const LANE_BITS: u32 = {scalar}::BITS;
 
@@ -284,7 +288,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::MAX, {name}::splat({max}));
-                    /// 
+                    ///
                     /// ```
                     pub const MAX: {name} = {name}::splat({scalar}::MAX);
 
@@ -296,7 +300,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::MIN, {name}::splat({min}));
-                    /// 
+                    ///
                     /// ```
                     pub const MIN: {name} = {name}::splat({scalar}::MIN);
 
@@ -332,7 +336,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::ZERO, {name}::splat(0));
-                    /// 
+                    ///
                     /// ```
                     pub const ZERO: {name} = {name}::splat(0);
 
@@ -344,7 +348,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::ONE, {name}::splat(1));
-                    /// 
+                    ///
                     /// ```
                     pub const ONE: {name} = {name}::splat(1);
 
@@ -388,7 +392,7 @@ impl Vector {
                         //         and have the same size.
                         unsafe {{ ::core::mem::transmute(arr) }}
                     }}
-                    
+
                     /// Get a reference to the underlying lanes as an array.
                     #[inline(always)]
                     #[must_use]
@@ -706,7 +710,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::splat(0x00).not(), {name}::splat(!0x00));
-                    /// 
+                    ///
                     /// ```
                     #[inline(always)]
                     #[must_use]
@@ -722,7 +726,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::splat(0b01).or({name}::splat(0b10)), {name}::splat(0b11));
-                    /// 
+                    ///
                     /// ```
                     #[inline(always)]
                     #[must_use]
@@ -738,7 +742,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::splat(0b1101).and({name}::splat(0b0111)), {name}::splat(0b0101));
-                    /// 
+                    ///
                     /// ```
                     #[inline(always)]
                     #[must_use]
@@ -754,7 +758,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::splat(0b1101).xor({name}::splat(0b0111)), {name}::splat(0b1010));
-                    /// 
+                    ///
                     /// ```
                     #[inline(always)]
                     #[must_use]
@@ -764,6 +768,182 @@ impl Vector {
                 }}
             "
         )?;
+
+        Ok(())
+    }
+
+    /// Implements reduction operations. These are only implemented for operators that are commutative and associative, currently anyways.
+    pub fn reduce(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
+        let Self {
+            scalar,
+            lanes,
+            repr,
+            name,
+        } = self;
+
+        let bits = scalar.width().unwrap();
+
+        let lower_mask = {
+            let nibbles = (0..lanes.get())
+                .rev()
+                .map(|lane| lane % 2 == 0)
+                .map(|is_lower| if is_lower { "F" } else { "0" })
+                .flat_map(|nibble| (0..bits.get() / 4).map(move |_| nibble));
+
+            iter::once("0x")
+                .chain(nibbles)
+                .chain(["_", repr.name()])
+                .collect::<String>()
+        };
+
+        let u_scalar = scalar.to_unsigned().unwrap();
+
+        let [reduce_and, reduce_or, reduce_xor] = if lanes.get() == 1 {
+            let expr = format!("(self.0 as {u_scalar}) as {scalar}");
+
+            [expr.clone(), expr.clone(), expr]
+        } else if lanes.get() == 2 {
+            ["&", "|", "^"].map(|op| {
+                formatdoc!(
+                    "
+                        // Get the two lanes in two separate {repr}s, and ensure that
+                        // each lane's bits fits within the low {bits}-bits.
+                        let a = self.0 & {lower_mask};
+                        let b = (self.0 >> {scalar}::BITS) & {lower_mask};
+
+                        // Compute the result, and cast to a scalar.
+                        ((a {op} b) as {u_scalar}) as {scalar}
+                    "
+                )
+            })
+        } else if let Some(double_scalar) = scalar.double_width() {
+            [("&", "reduce_and", "bitwise AND"), ("|", "reduce_or", "bitwise OR"), ("^", "reduce_xor", "bitwise XOR")].map(|(op, func, op_name)| {
+
+                formatdoc!(
+                    "
+                        use crate::{double_scalar}::{double_pascal}x{half_lanes};
+
+                        // Align neighboring pairs of lanes.
+                        let a = self.0 & {lower_mask};
+                        let b = (self.0 >> {scalar}::BITS) & {lower_mask};
+
+                        // Compute the {op_name} for two neighboring pairs, and then treat
+                        // the result as a {double_pascal}x{half_lanes} vector, defering to
+                        // it's `{func}` implementation for the further reduction steps.
+                        //
+                        // This works as {op_name} is an operation that is commutative and associative.
+                        let reduced = {double_pascal}x{half_lanes}::from_bits(a {op} b).{func}();
+
+                        // We want a truncating cast, normal casts should be fine, but this better
+                        // demonstrates what we're doing.
+                        (reduced as {double_unsigned}) as {scalar}
+                    ",
+                    half_lanes = lanes.get() / 2,
+                    double_pascal = double_scalar.pascal_name(),
+                    double_unsigned = double_scalar.to_unsigned().unwrap(),
+                )
+            })
+        } else {
+            array::from_fn(|_| "todo!()".into())
+        };
+
+        writedoc!(
+            out,
+            "
+
+            impl {name} {{
+                /// Computes a bitwise AND reduction.
+                #[inline(always)]
+                #[must_use]
+                pub const fn reduce_and(self) -> {scalar} {{
+                    {reduce_and}
+                }}
+
+                /// Computes a bitwise OR reduction.
+                #[inline(always)]
+                #[must_use]
+                pub const fn reduce_or(self) -> {scalar} {{
+                    {reduce_or}
+                }}
+
+                /// Computes a bitwise XOR reduction.
+                #[inline(always)]
+                #[must_use]
+                pub const fn reduce_xor(self) -> {scalar} {{
+                    {reduce_xor}
+                }}
+            }}
+
+            "
+        )?;
+
+        // let
+
+        // writedoc!(
+        //     out,
+        //     "
+        //     impl {name} {{
+        //         /// Performs a bitwise AND reduction.
+        //         #[inline(always)]
+        //         #[must_use]
+        //         pub const fn reduce_and(self) -> {scalar} {{
+        //             {reduce_and}
+        //         }}
+
+        //         /// Performs a bitwise OR reduction.
+        //         #[inline(always)]
+        //         #[must_use]
+        //         pub const fn reduce_or(self) -> {scalar} {{
+        //             {reduce_or}
+        //         }}
+        //     }}
+        //     ",
+        //     reduce_and = if lanes.get() == 1 {
+        //         formatdoc!(
+        //             "
+        //                 self.0 as {scalar}
+        //             "
+        //         )
+        //     } else if lanes.get() == 2 {
+        //         formatdoc!(
+        //             "
+        //                 let a = self.0 & {lower_mask};
+        //                 let b = (self.0 >> {scalar}::BITS) & {lower_mask};
+
+        //                (a & b) as {scalar}
+        //             "
+        //         )
+        //     } else if let Some(double_scalar) = scalar.double_width() {
+        //         formatdoc!(
+        //             "
+        //                 let a = self.0 & {lower_mask};
+        //                 let b = (self.0 >> {scalar}::BITS) & {lower_mask};
+
+        //                 crate::{double_scalar}::{double_pascal}x{double_lanes}(a & b).reduce_and() as {scalar}
+        //             ",
+        //             double_pascal = double_scalar.pascal_name(),
+        //             double_lanes = lanes.get() / 2,
+        //         )
+        //     } else {
+        //         String::from("todo!()")
+        //     },
+
+        //     reduce_or = if lanes.get() == 1 {
+        //         formatdoc!(
+        //             "
+        //                 self.0 as {scalar}
+        //             "
+        //         )
+        //     } else if lanes.get() == 2 {
+        //         formatdoc!(
+        //             "
+
+        //             "
+        //         )
+        //     } else {
+        //         String::from("todo!()")
+        //     }
+        // )?;
 
         Ok(())
     }
@@ -939,7 +1119,7 @@ impl Vector {
                     pub const unsafe fn unchecked_shr(self, n: u32) -> {name} {{
                         // SAFETY: The caller ensures `n < {bits}`.
                         unsafe {{ ::core::hint::assert_unchecked(n < {scalar}::BITS) }};
-                    
+
                         // Calculate the mask for the bits we want to keep.
                         //
                         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
@@ -950,7 +1130,7 @@ impl Vector {
                         //       There *may* be a way around this, but I am unaware of how. Until I figure
                         //       that out, this seems to be the fastest way of calculating the mask.
                         let mask = ({splat_two} << {scalar}::BITS - 1 - n).wrapping_sub({splat_one});
-                        
+
                         {shr}
                     }}
 
@@ -964,7 +1144,7 @@ impl Vector {
                     /// use swario::*;
                     ///
                     /// assert_eq!({name}::splat(0b01).wrapping_shl(1), {name}::splat(0b10));
-                    /// 
+                    ///
                     /// ```
                     #[inline(always)]
                     #[must_use]
@@ -1090,7 +1270,7 @@ impl Vector {
                     ///
                     /// assert_eq!({name}::splat(0b001).unbounded_shl(2), {name}::splat(0b100));
                     /// assert_eq!({name}::splat(0b001).unbounded_shl({bits}), {name}::splat(0));
-                    /// 
+                    ///
                     /// ```
                     #[inline(always)]
                     #[must_use]
@@ -1126,7 +1306,35 @@ impl Vector {
                             {name}::splat(0)
                         }}
                     }}
-                }}   
+                }}
+            "
+        )?;
+
+        Ok(())
+    }
+
+    /// Adds map operations.
+    pub fn map(&self, out: &mut dyn fmt::Write) -> anyhow::Result<()> {
+        let Self { scalar, name, .. } = self;
+
+        writedoc!(
+            out,
+            "
+                impl {name} {{
+                    /// Applies an operation on every [`{scalar}`] lane.
+                    #[inline(always)]
+                    #[must_use]
+                    #[track_caller]
+                    pub fn apply<F: FnMut(&mut {scalar})>(&mut self, f: F) -> &mut {name} {{
+                        self
+                            .as_array_mut()
+                            .iter_mut()
+                            .for_each(f)
+                        ;
+
+                        self
+                    }}
+                }}
             "
         )?;
 

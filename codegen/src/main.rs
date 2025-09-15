@@ -17,8 +17,9 @@ pub fn all_vectors() -> anyhow::Result<Vec<Vector>> {
         .filter(|scalar| scalar.width().is_some())
         .flat_map(|scalar| {
             scalar
-                .supported_counts()
+                .lane_counts()
                 .iter()
+                .skip(1)
                 .copied()
                 .map(move |lanes| Vector::new(scalar, lanes))
         })
@@ -67,7 +68,6 @@ fn main() -> anyhow::Result<()> {
                     pub mod {s};
                     #[doc(inline)]
                     pub use {s}::*;
-
 
                 "
             )?;

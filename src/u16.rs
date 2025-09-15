@@ -709,6 +709,48 @@ impl U16x2 {
         }
     }
 }
+
+impl U16x2 {
+    /// Computes a bitwise AND reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_and(self) -> u16 {
+        // Get the two lanes in two separate u32s, and ensure that
+        // each lane's bits fits within the low 16-bits.
+        let a = self.0 & 0x0000FFFF_u32;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF_u32;
+
+        // Compute the result, and cast to a scalar.
+        ((a & b) as u16) as u16
+    }
+
+    /// Computes a bitwise OR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_or(self) -> u16 {
+        // Get the two lanes in two separate u32s, and ensure that
+        // each lane's bits fits within the low 16-bits.
+        let a = self.0 & 0x0000FFFF_u32;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF_u32;
+
+        // Compute the result, and cast to a scalar.
+        ((a | b) as u16) as u16
+    }
+
+    /// Computes a bitwise XOR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_xor(self) -> u16 {
+        // Get the two lanes in two separate u32s, and ensure that
+        // each lane's bits fits within the low 16-bits.
+        let a = self.0 & 0x0000FFFF_u32;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF_u32;
+
+        // Compute the result, and cast to a scalar.
+        ((a ^ b) as u16) as u16
+    }
+}
+
 /// A 64-bit SWAR vector containing 4 [`u16`]s.
 ///
 ///
@@ -1422,6 +1464,75 @@ impl U16x4 {
         }
     }
 }
+
+impl U16x4 {
+    /// Computes a bitwise AND reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_and(self) -> u16 {
+        use crate::u32::U32x2;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x0000FFFF0000FFFF_u64;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF0000FFFF_u64;
+
+        // Compute the bitwise AND for two neighboring pairs, and then treat
+        // the result as a U32x2 vector, defering to
+        // it's `reduce_and` implementation for the further reduction steps.
+        //
+        // This works as bitwise AND is an operation that is commutative and associative.
+        let reduced = U32x2::from_bits(a & b).reduce_and();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u32) as u16
+    }
+
+    /// Computes a bitwise OR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_or(self) -> u16 {
+        use crate::u32::U32x2;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x0000FFFF0000FFFF_u64;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF0000FFFF_u64;
+
+        // Compute the bitwise OR for two neighboring pairs, and then treat
+        // the result as a U32x2 vector, defering to
+        // it's `reduce_or` implementation for the further reduction steps.
+        //
+        // This works as bitwise OR is an operation that is commutative and associative.
+        let reduced = U32x2::from_bits(a | b).reduce_or();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u32) as u16
+    }
+
+    /// Computes a bitwise XOR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_xor(self) -> u16 {
+        use crate::u32::U32x2;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x0000FFFF0000FFFF_u64;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF0000FFFF_u64;
+
+        // Compute the bitwise XOR for two neighboring pairs, and then treat
+        // the result as a U32x2 vector, defering to
+        // it's `reduce_xor` implementation for the further reduction steps.
+        //
+        // This works as bitwise XOR is an operation that is commutative and associative.
+        let reduced = U32x2::from_bits(a ^ b).reduce_xor();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u32) as u16
+    }
+}
+
 /// A 128-bit SWAR vector containing 8 [`u16`]s.
 ///
 ///
@@ -2133,5 +2244,73 @@ impl U16x8 {
         } else {
             U16x8::splat(0)
         }
+    }
+}
+
+impl U16x8 {
+    /// Computes a bitwise AND reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_and(self) -> u16 {
+        use crate::u32::U32x4;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
+
+        // Compute the bitwise AND for two neighboring pairs, and then treat
+        // the result as a U32x4 vector, defering to
+        // it's `reduce_and` implementation for the further reduction steps.
+        //
+        // This works as bitwise AND is an operation that is commutative and associative.
+        let reduced = U32x4::from_bits(a & b).reduce_and();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u32) as u16
+    }
+
+    /// Computes a bitwise OR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_or(self) -> u16 {
+        use crate::u32::U32x4;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
+
+        // Compute the bitwise OR for two neighboring pairs, and then treat
+        // the result as a U32x4 vector, defering to
+        // it's `reduce_or` implementation for the further reduction steps.
+        //
+        // This works as bitwise OR is an operation that is commutative and associative.
+        let reduced = U32x4::from_bits(a | b).reduce_or();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u32) as u16
+    }
+
+    /// Computes a bitwise XOR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_xor(self) -> u16 {
+        use crate::u32::U32x4;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
+        let b = (self.0 >> u16::BITS) & 0x0000FFFF0000FFFF0000FFFF0000FFFF_u128;
+
+        // Compute the bitwise XOR for two neighboring pairs, and then treat
+        // the result as a U32x4 vector, defering to
+        // it's `reduce_xor` implementation for the further reduction steps.
+        //
+        // This works as bitwise XOR is an operation that is commutative and associative.
+        let reduced = U32x4::from_bits(a ^ b).reduce_xor();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u32) as u16
     }
 }

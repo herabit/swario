@@ -742,6 +742,48 @@ impl I32x2 {
         }
     }
 }
+
+impl I32x2 {
+    /// Computes a bitwise AND reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_and(self) -> i32 {
+        // Get the two lanes in two separate u64s, and ensure that
+        // each lane's bits fits within the low 32-bits.
+        let a = self.0 & 0x00000000FFFFFFFF_u64;
+        let b = (self.0 >> i32::BITS) & 0x00000000FFFFFFFF_u64;
+
+        // Compute the result, and cast to a scalar.
+        ((a & b) as u32) as i32
+    }
+
+    /// Computes a bitwise OR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_or(self) -> i32 {
+        // Get the two lanes in two separate u64s, and ensure that
+        // each lane's bits fits within the low 32-bits.
+        let a = self.0 & 0x00000000FFFFFFFF_u64;
+        let b = (self.0 >> i32::BITS) & 0x00000000FFFFFFFF_u64;
+
+        // Compute the result, and cast to a scalar.
+        ((a | b) as u32) as i32
+    }
+
+    /// Computes a bitwise XOR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_xor(self) -> i32 {
+        // Get the two lanes in two separate u64s, and ensure that
+        // each lane's bits fits within the low 32-bits.
+        let a = self.0 & 0x00000000FFFFFFFF_u64;
+        let b = (self.0 >> i32::BITS) & 0x00000000FFFFFFFF_u64;
+
+        // Compute the result, and cast to a scalar.
+        ((a ^ b) as u32) as i32
+    }
+}
+
 /// A 128-bit SWAR vector containing 4 [`i32`]s.
 ///
 ///
@@ -1484,5 +1526,73 @@ impl I32x4 {
         } else {
             I32x4::splat(0)
         }
+    }
+}
+
+impl I32x4 {
+    /// Computes a bitwise AND reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_and(self) -> i32 {
+        use crate::i64::I64x2;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x00000000FFFFFFFF00000000FFFFFFFF_u128;
+        let b = (self.0 >> i32::BITS) & 0x00000000FFFFFFFF00000000FFFFFFFF_u128;
+
+        // Compute the bitwise AND for two neighboring pairs, and then treat
+        // the result as a I64x2 vector, defering to
+        // it's `reduce_and` implementation for the further reduction steps.
+        //
+        // This works as bitwise AND is an operation that is commutative and associative.
+        let reduced = I64x2::from_bits(a & b).reduce_and();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u64) as i32
+    }
+
+    /// Computes a bitwise OR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_or(self) -> i32 {
+        use crate::i64::I64x2;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x00000000FFFFFFFF00000000FFFFFFFF_u128;
+        let b = (self.0 >> i32::BITS) & 0x00000000FFFFFFFF00000000FFFFFFFF_u128;
+
+        // Compute the bitwise OR for two neighboring pairs, and then treat
+        // the result as a I64x2 vector, defering to
+        // it's `reduce_or` implementation for the further reduction steps.
+        //
+        // This works as bitwise OR is an operation that is commutative and associative.
+        let reduced = I64x2::from_bits(a | b).reduce_or();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u64) as i32
+    }
+
+    /// Computes a bitwise XOR reduction.
+    #[inline(always)]
+    #[must_use]
+    pub const fn reduce_xor(self) -> i32 {
+        use crate::i64::I64x2;
+
+        // Align neighboring pairs of lanes.
+        let a = self.0 & 0x00000000FFFFFFFF00000000FFFFFFFF_u128;
+        let b = (self.0 >> i32::BITS) & 0x00000000FFFFFFFF00000000FFFFFFFF_u128;
+
+        // Compute the bitwise XOR for two neighboring pairs, and then treat
+        // the result as a I64x2 vector, defering to
+        // it's `reduce_xor` implementation for the further reduction steps.
+        //
+        // This works as bitwise XOR is an operation that is commutative and associative.
+        let reduced = I64x2::from_bits(a ^ b).reduce_xor();
+
+        // We want a truncating cast, normal casts should be fine, but this better
+        // demonstrates what we're doing.
+        (reduced as u64) as i32
     }
 }
