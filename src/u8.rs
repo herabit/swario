@@ -509,23 +509,41 @@ impl U8x2 {
         U8x2(shifted & mask)
     }
 
-    /// Performs an unchecked right shift on every [`u8`] lane.
+    /// Performs an unchecked right shift on every [`u8`] lane by `n` bits.
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`. Failure to do so is undefined behavior.
+    /// The caller must ensure `n < 8`.
     #[inline(always)]
     #[must_use]
     #[track_caller]
     pub const unsafe fn unchecked_shr(self, n: u32) -> U8x2 {
-        // SAFETY: The caller ensures `n < 8`.
+        // NOTE: `n` is a [`u32`] mainly to maintain parity with the Rust standard library. All of the
+        //       right shift methods on [`u8`]s accept a [`u32`] as an argument.
+        //
+        //       Even though we know that `n` could definitely fit within a byte, this is just easier
+        //       for consumers of the library. API consistency.
+
+        // SAFETY: The caller ensures `n < 8`. This permits the omission of
+        //         UB checks in debug builds (given the code is compiled with `opt-level > 0`),
+        //         as well as permits surrounding code to be optimized further by giving the
+        //         compiler *more* information.
+        //
+        //         One such example is the following mask calculation, if the compiler knows that `u8::BITS - n` never
+        //         will over/underflow, it permits the omission of Rust's automatically inserted debug checks for the subtraction
+        //         `u8::BITS - 1 - n`. In release builds, Rust will always default to wrapping subtraction, but due to this
+        //         utilization of LLVM's `assume` intrinsic (which `assert_unchecked` lowers to), we're telling the compiler that,
+        //         it is impossible for `n >= u8::BITS` to ever be true.
+        //
+        //         This is a micro-optimization. While on `x86_64` on Zen 4, on release builds, the difference is negligible, we're
+        //         able to give the compiler *more* information that it previously would not have, given the caller upholds the contract.
         unsafe { ::core::hint::assert_unchecked(n < u8::BITS) };
 
         // Calculate the mask for the bits we want to keep.
         //
         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
         //
-        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       According to LLVM-MCA, on Zen 4 this seems to put undue stress on the ALU
         //       when doing the wrapping subtraction.
         //
         //       There *may* be a way around this, but I am unaware of how. Until I figure
@@ -1262,23 +1280,41 @@ impl U8x4 {
         U8x4(shifted & mask)
     }
 
-    /// Performs an unchecked right shift on every [`u8`] lane.
+    /// Performs an unchecked right shift on every [`u8`] lane by `n` bits.
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`. Failure to do so is undefined behavior.
+    /// The caller must ensure `n < 8`.
     #[inline(always)]
     #[must_use]
     #[track_caller]
     pub const unsafe fn unchecked_shr(self, n: u32) -> U8x4 {
-        // SAFETY: The caller ensures `n < 8`.
+        // NOTE: `n` is a [`u32`] mainly to maintain parity with the Rust standard library. All of the
+        //       right shift methods on [`u8`]s accept a [`u32`] as an argument.
+        //
+        //       Even though we know that `n` could definitely fit within a byte, this is just easier
+        //       for consumers of the library. API consistency.
+
+        // SAFETY: The caller ensures `n < 8`. This permits the omission of
+        //         UB checks in debug builds (given the code is compiled with `opt-level > 0`),
+        //         as well as permits surrounding code to be optimized further by giving the
+        //         compiler *more* information.
+        //
+        //         One such example is the following mask calculation, if the compiler knows that `u8::BITS - n` never
+        //         will over/underflow, it permits the omission of Rust's automatically inserted debug checks for the subtraction
+        //         `u8::BITS - 1 - n`. In release builds, Rust will always default to wrapping subtraction, but due to this
+        //         utilization of LLVM's `assume` intrinsic (which `assert_unchecked` lowers to), we're telling the compiler that,
+        //         it is impossible for `n >= u8::BITS` to ever be true.
+        //
+        //         This is a micro-optimization. While on `x86_64` on Zen 4, on release builds, the difference is negligible, we're
+        //         able to give the compiler *more* information that it previously would not have, given the caller upholds the contract.
         unsafe { ::core::hint::assert_unchecked(n < u8::BITS) };
 
         // Calculate the mask for the bits we want to keep.
         //
         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
         //
-        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       According to LLVM-MCA, on Zen 4 this seems to put undue stress on the ALU
         //       when doing the wrapping subtraction.
         //
         //       There *may* be a way around this, but I am unaware of how. Until I figure
@@ -2043,23 +2079,41 @@ impl U8x8 {
         U8x8(shifted & mask)
     }
 
-    /// Performs an unchecked right shift on every [`u8`] lane.
+    /// Performs an unchecked right shift on every [`u8`] lane by `n` bits.
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`. Failure to do so is undefined behavior.
+    /// The caller must ensure `n < 8`.
     #[inline(always)]
     #[must_use]
     #[track_caller]
     pub const unsafe fn unchecked_shr(self, n: u32) -> U8x8 {
-        // SAFETY: The caller ensures `n < 8`.
+        // NOTE: `n` is a [`u32`] mainly to maintain parity with the Rust standard library. All of the
+        //       right shift methods on [`u8`]s accept a [`u32`] as an argument.
+        //
+        //       Even though we know that `n` could definitely fit within a byte, this is just easier
+        //       for consumers of the library. API consistency.
+
+        // SAFETY: The caller ensures `n < 8`. This permits the omission of
+        //         UB checks in debug builds (given the code is compiled with `opt-level > 0`),
+        //         as well as permits surrounding code to be optimized further by giving the
+        //         compiler *more* information.
+        //
+        //         One such example is the following mask calculation, if the compiler knows that `u8::BITS - n` never
+        //         will over/underflow, it permits the omission of Rust's automatically inserted debug checks for the subtraction
+        //         `u8::BITS - 1 - n`. In release builds, Rust will always default to wrapping subtraction, but due to this
+        //         utilization of LLVM's `assume` intrinsic (which `assert_unchecked` lowers to), we're telling the compiler that,
+        //         it is impossible for `n >= u8::BITS` to ever be true.
+        //
+        //         This is a micro-optimization. While on `x86_64` on Zen 4, on release builds, the difference is negligible, we're
+        //         able to give the compiler *more* information that it previously would not have, given the caller upholds the contract.
         unsafe { ::core::hint::assert_unchecked(n < u8::BITS) };
 
         // Calculate the mask for the bits we want to keep.
         //
         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
         //
-        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       According to LLVM-MCA, on Zen 4 this seems to put undue stress on the ALU
         //       when doing the wrapping subtraction.
         //
         //       There *may* be a way around this, but I am unaware of how. Until I figure
@@ -2842,23 +2896,41 @@ impl U8x16 {
         U8x16(shifted & mask)
     }
 
-    /// Performs an unchecked right shift on every [`u8`] lane.
+    /// Performs an unchecked right shift on every [`u8`] lane by `n` bits.
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`. Failure to do so is undefined behavior.
+    /// The caller must ensure `n < 8`.
     #[inline(always)]
     #[must_use]
     #[track_caller]
     pub const unsafe fn unchecked_shr(self, n: u32) -> U8x16 {
-        // SAFETY: The caller ensures `n < 8`.
+        // NOTE: `n` is a [`u32`] mainly to maintain parity with the Rust standard library. All of the
+        //       right shift methods on [`u8`]s accept a [`u32`] as an argument.
+        //
+        //       Even though we know that `n` could definitely fit within a byte, this is just easier
+        //       for consumers of the library. API consistency.
+
+        // SAFETY: The caller ensures `n < 8`. This permits the omission of
+        //         UB checks in debug builds (given the code is compiled with `opt-level > 0`),
+        //         as well as permits surrounding code to be optimized further by giving the
+        //         compiler *more* information.
+        //
+        //         One such example is the following mask calculation, if the compiler knows that `u8::BITS - n` never
+        //         will over/underflow, it permits the omission of Rust's automatically inserted debug checks for the subtraction
+        //         `u8::BITS - 1 - n`. In release builds, Rust will always default to wrapping subtraction, but due to this
+        //         utilization of LLVM's `assume` intrinsic (which `assert_unchecked` lowers to), we're telling the compiler that,
+        //         it is impossible for `n >= u8::BITS` to ever be true.
+        //
+        //         This is a micro-optimization. While on `x86_64` on Zen 4, on release builds, the difference is negligible, we're
+        //         able to give the compiler *more* information that it previously would not have, given the caller upholds the contract.
         unsafe { ::core::hint::assert_unchecked(n < u8::BITS) };
 
         // Calculate the mask for the bits we want to keep.
         //
         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
         //
-        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       According to LLVM-MCA, on Zen 4 this seems to put undue stress on the ALU
         //       when doing the wrapping subtraction.
         //
         //       There *may* be a way around this, but I am unaware of how. Until I figure

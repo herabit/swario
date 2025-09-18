@@ -521,28 +521,100 @@ impl I16x2 {
         I16x2(shifted & mask)
     }
 
-    /// Performs an unchecked right shift on every [`i16`] lane.
+    /// Performs an unchecked right shift on every [`i16`] lane by `n` bits.
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    /// The caller must ensure `n < 16`.
     #[inline(always)]
     #[must_use]
     #[track_caller]
     pub const unsafe fn unchecked_shr(self, n: u32) -> I16x2 {
-        // SAFETY: The caller ensures `n < 16`.
+        // NOTE: `n` is a [`u32`] mainly to maintain parity with the Rust standard library. All of the
+        //       right shift methods on [`i16`]s accept a [`u32`] as an argument.
+        //
+        //       Even though we know that `n` could definitely fit within a byte, this is just easier
+        //       for consumers of the library. API consistency.
+
+        // SAFETY: The caller ensures `n < 16`. This permits the omission of
+        //         UB checks in debug builds (given the code is compiled with `opt-level > 0`),
+        //         as well as permits surrounding code to be optimized further by giving the
+        //         compiler *more* information.
+        //
+        //         One such example is the following mask calculation, if the compiler knows that `i16::BITS - n` never
+        //         will over/underflow, it permits the omission of Rust's automatically inserted debug checks for the subtraction
+        //         `i16::BITS - 1 - n`. In release builds, Rust will always default to wrapping subtraction, but due to this
+        //         utilization of LLVM's `assume` intrinsic (which `assert_unchecked` lowers to), we're telling the compiler that,
+        //         it is impossible for `n >= i16::BITS` to ever be true.
+        //
+        //         This is a micro-optimization. While on `x86_64` on Zen 4, on release builds, the difference is negligible, we're
+        //         able to give the compiler *more* information that it previously would not have, given the caller upholds the contract.
         unsafe { ::core::hint::assert_unchecked(n < i16::BITS) };
 
         // Calculate the mask for the bits we want to keep.
         //
         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
         //
-        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       According to LLVM-MCA, on Zen 4 this seems to put undue stress on the ALU
         //       when doing the wrapping subtraction.
         //
         //       There *may* be a way around this, but I am unaware of how. Until I figure
         //       that out, this seems to be the fastest way of calculating the mask.
         let mask = (0x00020002_u32 << i16::BITS - 1 - n).wrapping_sub(0x00010001_u32);
+
+        // PERFORMANCE NOTE:
+        //
+        // This algorithm seems to have better theoretical performance according to
+        // `LLVM-MCA` than my original implementation. The reasoning behind this would
+        // appear to be the fact my previous algorithm essentially calculated a mask of all the
+        // negative lanes (which relied significantly on `sign_mask`), and then in order
+        // to even perform the shift, we would have to XOR the vector with the mask.
+        //
+        // By inverting all of the bits of each negative lane, they cease to be negative,
+        // making the logical shift we do afterwards perform the sign extension for us.
+        //
+        // Then, we'd flip the negative lane bits back with another XOR with the mask, followed
+        // by us masking out the bits that overflowed into other lanes.
+        //
+        // This, was the obvious implementation, at least for me originally. The issue is, however,
+        // this makes *every operation after* dependent on the result of not only the `sign_mask`
+        // calculation, but that of the `neg_mask` calculation (`neg_mask` being a mask of all the
+        // lanes that were negative).
+        //
+        // This creates quite a significant dependency chain, one that restricts how modern CPUs, at
+        // least `x86_64`, can schedule the execution of instructions. Dependency chains hinder the
+        // ability for out-of-order execution to be performed...
+        //
+        // This algorithm, however, differs in that the actual shift is done *independently* of the
+        // sign extension. Both have their dependency chains, sure, but they can be executed independently
+        // of one another.
+        //
+        // We compute the logical right shift, and then we calculate the sign extension, then, at the end,
+        // we merge them through an `unchecked_add` (as the sign extension's bits are mutually exclusive to
+        // the masked out bits of the logical right shift).
+        //
+        // Even further performance could be achieved through the utilization of `disjoint_bitor` whenever that
+        // becomes available in the standard library, as it gives LLVM even further information about what we
+        // guarantee, allowing it to better decide which instruction to use.
+        //
+        //
+        // See below for the pseudo code for the old algorithm (`mask` is the same value as above):
+        //
+        // ```
+        // let sign_mask = self.0 & 0x80008000_u32;
+        //
+        // let neg_mask = sign_mask.wrapping_add(
+        //     sign_mask.wrapping_sub(sign_mask >> i16::BITS - 1)
+        // );
+        //
+        // let shifted = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        //
+        // return I16x2(shifted & mask);
+        // ```
+
+        // NOTE ON REPRESENTATION: All signed integers in Rust, at least those that are primitives,
+        //                         are stored in two's complement. This algorithm relies upon that
+        //                         fact.
 
         // Perform a logical right shift.
         let logical = (self.0 >> n) & mask;
@@ -554,6 +626,8 @@ impl I16x2 {
         //
         // This essentially calculates a vector where the leading `n` bits of each lane
         // are all set to the sign bit of the source lane.
+        //
+        // This is also the sole depender on `sign_mask`.
         let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
         // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
@@ -1306,29 +1380,101 @@ impl I16x4 {
         I16x4(shifted & mask)
     }
 
-    /// Performs an unchecked right shift on every [`i16`] lane.
+    /// Performs an unchecked right shift on every [`i16`] lane by `n` bits.
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    /// The caller must ensure `n < 16`.
     #[inline(always)]
     #[must_use]
     #[track_caller]
     pub const unsafe fn unchecked_shr(self, n: u32) -> I16x4 {
-        // SAFETY: The caller ensures `n < 16`.
+        // NOTE: `n` is a [`u32`] mainly to maintain parity with the Rust standard library. All of the
+        //       right shift methods on [`i16`]s accept a [`u32`] as an argument.
+        //
+        //       Even though we know that `n` could definitely fit within a byte, this is just easier
+        //       for consumers of the library. API consistency.
+
+        // SAFETY: The caller ensures `n < 16`. This permits the omission of
+        //         UB checks in debug builds (given the code is compiled with `opt-level > 0`),
+        //         as well as permits surrounding code to be optimized further by giving the
+        //         compiler *more* information.
+        //
+        //         One such example is the following mask calculation, if the compiler knows that `i16::BITS - n` never
+        //         will over/underflow, it permits the omission of Rust's automatically inserted debug checks for the subtraction
+        //         `i16::BITS - 1 - n`. In release builds, Rust will always default to wrapping subtraction, but due to this
+        //         utilization of LLVM's `assume` intrinsic (which `assert_unchecked` lowers to), we're telling the compiler that,
+        //         it is impossible for `n >= i16::BITS` to ever be true.
+        //
+        //         This is a micro-optimization. While on `x86_64` on Zen 4, on release builds, the difference is negligible, we're
+        //         able to give the compiler *more* information that it previously would not have, given the caller upholds the contract.
         unsafe { ::core::hint::assert_unchecked(n < i16::BITS) };
 
         // Calculate the mask for the bits we want to keep.
         //
         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
         //
-        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       According to LLVM-MCA, on Zen 4 this seems to put undue stress on the ALU
         //       when doing the wrapping subtraction.
         //
         //       There *may* be a way around this, but I am unaware of how. Until I figure
         //       that out, this seems to be the fastest way of calculating the mask.
         let mask =
             (0x0002000200020002_u64 << i16::BITS - 1 - n).wrapping_sub(0x0001000100010001_u64);
+
+        // PERFORMANCE NOTE:
+        //
+        // This algorithm seems to have better theoretical performance according to
+        // `LLVM-MCA` than my original implementation. The reasoning behind this would
+        // appear to be the fact my previous algorithm essentially calculated a mask of all the
+        // negative lanes (which relied significantly on `sign_mask`), and then in order
+        // to even perform the shift, we would have to XOR the vector with the mask.
+        //
+        // By inverting all of the bits of each negative lane, they cease to be negative,
+        // making the logical shift we do afterwards perform the sign extension for us.
+        //
+        // Then, we'd flip the negative lane bits back with another XOR with the mask, followed
+        // by us masking out the bits that overflowed into other lanes.
+        //
+        // This, was the obvious implementation, at least for me originally. The issue is, however,
+        // this makes *every operation after* dependent on the result of not only the `sign_mask`
+        // calculation, but that of the `neg_mask` calculation (`neg_mask` being a mask of all the
+        // lanes that were negative).
+        //
+        // This creates quite a significant dependency chain, one that restricts how modern CPUs, at
+        // least `x86_64`, can schedule the execution of instructions. Dependency chains hinder the
+        // ability for out-of-order execution to be performed...
+        //
+        // This algorithm, however, differs in that the actual shift is done *independently* of the
+        // sign extension. Both have their dependency chains, sure, but they can be executed independently
+        // of one another.
+        //
+        // We compute the logical right shift, and then we calculate the sign extension, then, at the end,
+        // we merge them through an `unchecked_add` (as the sign extension's bits are mutually exclusive to
+        // the masked out bits of the logical right shift).
+        //
+        // Even further performance could be achieved through the utilization of `disjoint_bitor` whenever that
+        // becomes available in the standard library, as it gives LLVM even further information about what we
+        // guarantee, allowing it to better decide which instruction to use.
+        //
+        //
+        // See below for the pseudo code for the old algorithm (`mask` is the same value as above):
+        //
+        // ```
+        // let sign_mask = self.0 & 0x8000800080008000_u64;
+        //
+        // let neg_mask = sign_mask.wrapping_add(
+        //     sign_mask.wrapping_sub(sign_mask >> i16::BITS - 1)
+        // );
+        //
+        // let shifted = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        //
+        // return I16x4(shifted & mask);
+        // ```
+
+        // NOTE ON REPRESENTATION: All signed integers in Rust, at least those that are primitives,
+        //                         are stored in two's complement. This algorithm relies upon that
+        //                         fact.
 
         // Perform a logical right shift.
         let logical = (self.0 >> n) & mask;
@@ -1340,6 +1486,8 @@ impl I16x4 {
         //
         // This essentially calculates a vector where the leading `n` bits of each lane
         // are all set to the sign bit of the source lane.
+        //
+        // This is also the sole depender on `sign_mask`.
         let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
         // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
@@ -2119,29 +2267,101 @@ impl I16x8 {
         I16x8(shifted & mask)
     }
 
-    /// Performs an unchecked right shift on every [`i16`] lane.
+    /// Performs an unchecked right shift on every [`i16`] lane by `n` bits.
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 16`. Failure to do so is undefined behavior.
+    /// The caller must ensure `n < 16`.
     #[inline(always)]
     #[must_use]
     #[track_caller]
     pub const unsafe fn unchecked_shr(self, n: u32) -> I16x8 {
-        // SAFETY: The caller ensures `n < 16`.
+        // NOTE: `n` is a [`u32`] mainly to maintain parity with the Rust standard library. All of the
+        //       right shift methods on [`i16`]s accept a [`u32`] as an argument.
+        //
+        //       Even though we know that `n` could definitely fit within a byte, this is just easier
+        //       for consumers of the library. API consistency.
+
+        // SAFETY: The caller ensures `n < 16`. This permits the omission of
+        //         UB checks in debug builds (given the code is compiled with `opt-level > 0`),
+        //         as well as permits surrounding code to be optimized further by giving the
+        //         compiler *more* information.
+        //
+        //         One such example is the following mask calculation, if the compiler knows that `i16::BITS - n` never
+        //         will over/underflow, it permits the omission of Rust's automatically inserted debug checks for the subtraction
+        //         `i16::BITS - 1 - n`. In release builds, Rust will always default to wrapping subtraction, but due to this
+        //         utilization of LLVM's `assume` intrinsic (which `assert_unchecked` lowers to), we're telling the compiler that,
+        //         it is impossible for `n >= i16::BITS` to ever be true.
+        //
+        //         This is a micro-optimization. While on `x86_64` on Zen 4, on release builds, the difference is negligible, we're
+        //         able to give the compiler *more* information that it previously would not have, given the caller upholds the contract.
         unsafe { ::core::hint::assert_unchecked(n < i16::BITS) };
 
         // Calculate the mask for the bits we want to keep.
         //
         // TODO: Figure out a way that is as quick as the mask calculation for `shl`.
         //
-        //       According to LLVM-MCA, on Zen4 this seems to put undue stress on the ALU
+        //       According to LLVM-MCA, on Zen 4 this seems to put undue stress on the ALU
         //       when doing the wrapping subtraction.
         //
         //       There *may* be a way around this, but I am unaware of how. Until I figure
         //       that out, this seems to be the fastest way of calculating the mask.
         let mask = (0x00020002000200020002000200020002_u128 << i16::BITS - 1 - n)
             .wrapping_sub(0x00010001000100010001000100010001_u128);
+
+        // PERFORMANCE NOTE:
+        //
+        // This algorithm seems to have better theoretical performance according to
+        // `LLVM-MCA` than my original implementation. The reasoning behind this would
+        // appear to be the fact my previous algorithm essentially calculated a mask of all the
+        // negative lanes (which relied significantly on `sign_mask`), and then in order
+        // to even perform the shift, we would have to XOR the vector with the mask.
+        //
+        // By inverting all of the bits of each negative lane, they cease to be negative,
+        // making the logical shift we do afterwards perform the sign extension for us.
+        //
+        // Then, we'd flip the negative lane bits back with another XOR with the mask, followed
+        // by us masking out the bits that overflowed into other lanes.
+        //
+        // This, was the obvious implementation, at least for me originally. The issue is, however,
+        // this makes *every operation after* dependent on the result of not only the `sign_mask`
+        // calculation, but that of the `neg_mask` calculation (`neg_mask` being a mask of all the
+        // lanes that were negative).
+        //
+        // This creates quite a significant dependency chain, one that restricts how modern CPUs, at
+        // least `x86_64`, can schedule the execution of instructions. Dependency chains hinder the
+        // ability for out-of-order execution to be performed...
+        //
+        // This algorithm, however, differs in that the actual shift is done *independently* of the
+        // sign extension. Both have their dependency chains, sure, but they can be executed independently
+        // of one another.
+        //
+        // We compute the logical right shift, and then we calculate the sign extension, then, at the end,
+        // we merge them through an `unchecked_add` (as the sign extension's bits are mutually exclusive to
+        // the masked out bits of the logical right shift).
+        //
+        // Even further performance could be achieved through the utilization of `disjoint_bitor` whenever that
+        // becomes available in the standard library, as it gives LLVM even further information about what we
+        // guarantee, allowing it to better decide which instruction to use.
+        //
+        //
+        // See below for the pseudo code for the old algorithm (`mask` is the same value as above):
+        //
+        // ```
+        // let sign_mask = self.0 & 0x80008000800080008000800080008000_u128;
+        //
+        // let neg_mask = sign_mask.wrapping_add(
+        //     sign_mask.wrapping_sub(sign_mask >> i16::BITS - 1)
+        // );
+        //
+        // let shifted = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
+        //
+        // return I16x8(shifted & mask);
+        // ```
+
+        // NOTE ON REPRESENTATION: All signed integers in Rust, at least those that are primitives,
+        //                         are stored in two's complement. This algorithm relies upon that
+        //                         fact.
 
         // Perform a logical right shift.
         let logical = (self.0 >> n) & mask;
@@ -2153,6 +2373,8 @@ impl I16x8 {
         //
         // This essentially calculates a vector where the leading `n` bits of each lane
         // are all set to the sign bit of the source lane.
+        //
+        // This is also the sole depender on `sign_mask`.
         let sign_ext = (sign_mask - (sign_mask >> n)) << 1;
 
         // SAFETY: We know that `logical` and `sign_ext` do not have any overlapping set bits.
