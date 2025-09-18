@@ -514,7 +514,7 @@ impl U32x2 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 32`.
+    /// The caller must ensure `n < 32`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]
@@ -1287,7 +1287,7 @@ impl U32x4 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 32`.
+    /// The caller must ensure `n < 32`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]

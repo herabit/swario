@@ -1079,7 +1079,7 @@ impl Vector {
                     ///
                     /// # Safety
                     ///
-                    /// The caller must ensure `n < {bits}`.
+                    /// The caller must ensure `n < {bits}`. Failure to do so is *undefined behavior*.
                     #[inline(always)]
                     #[must_use]
                     #[track_caller]

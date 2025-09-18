@@ -514,7 +514,7 @@ impl U64x2 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 64`.
+    /// The caller must ensure `n < 64`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]

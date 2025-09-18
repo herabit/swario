@@ -525,7 +525,7 @@ impl I8x2 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`.
+    /// The caller must ensure `n < 8`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]
@@ -1383,7 +1383,7 @@ impl I8x4 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`.
+    /// The caller must ensure `n < 8`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]
@@ -2269,7 +2269,7 @@ impl I8x8 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`.
+    /// The caller must ensure `n < 8`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]
@@ -3173,7 +3173,7 @@ impl I8x16 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 8`.
+    /// The caller must ensure `n < 8`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]

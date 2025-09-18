@@ -513,7 +513,7 @@ impl U16x2 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 16`.
+    /// The caller must ensure `n < 16`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]
@@ -1285,7 +1285,7 @@ impl U16x4 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 16`.
+    /// The caller must ensure `n < 16`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]
@@ -2085,7 +2085,7 @@ impl U16x8 {
     ///
     /// # Safety
     ///
-    /// The caller must ensure `n < 16`.
+    /// The caller must ensure `n < 16`. Failure to do so is *undefined behavior*.
     #[inline(always)]
     #[must_use]
     #[track_caller]
