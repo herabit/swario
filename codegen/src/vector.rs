@@ -944,56 +944,6 @@ impl Vector {
         } else {
             formatdoc!(
                 "
-                    // PERFORMANCE NOTE:
-                    //
-                    // This algorithm seems to have better theoretical performance according to
-                    // `LLVM-MCA` than my original implementation. The reasoning behind this would
-                    // appear to be the fact my previous algorithm essentially calculated a mask of all the
-                    // negative lanes (which relied significantly on `sign_mask`), and then in order
-                    // to even perform the shift, we would have to XOR the vector with the mask.
-                    //
-                    // By inverting all of the bits of each negative lane, they cease to be negative,
-                    // making the logical shift we do afterwards perform the sign extension for us.
-                    //
-                    // Then, we'd flip the negative lane bits back with another XOR with the mask, followed
-                    // by us masking out the bits that overflowed into other lanes.
-                    //
-                    // This, was the obvious implementation, at least for me originally. The issue is, however,
-                    // this makes *every operation after* dependent on the result of not only the `sign_mask`
-                    // calculation, but that of the `neg_mask` calculation (`neg_mask` being a mask of all the
-                    // lanes that were negative).
-                    //
-                    // This creates quite a significant dependency chain, one that restricts how modern CPUs, at
-                    // least `x86_64`, can schedule the execution of instructions. Dependency chains hinder the
-                    // ability for out-of-order execution to be performed...
-                    //
-                    // This algorithm, however, differs in that the actual shift is done *independently* of the
-                    // sign extension. Both have their dependency chains, sure, but they can be executed independently
-                    // of one another.
-                    //
-                    // We compute the logical right shift, and then we calculate the sign extension, then, at the end,
-                    // we merge them through an `unchecked_add` (as the sign extension's bits are mutually exclusive to
-                    // the masked out bits of the logical right shift).
-                    //
-                    // Even further performance could be achieved through the utilization of `disjoint_bitor` whenever that
-                    // becomes available in the standard library, as it gives LLVM even further information about what we
-                    // guarantee, allowing it to better decide which instruction to use.
-                    //
-                    //
-                    // See below for the pseudo code for the old algorithm (`mask` is the same value as above):
-                    //
-                    // ```
-                    // let sign_mask = self.0 & {splat_msb};
-                    //
-                    // let neg_mask = sign_mask.wrapping_add(
-                    //     sign_mask.wrapping_sub(sign_mask >> {scalar}::BITS - 1)
-                    // );
-                    //
-                    // let shifted = ((self.0 ^ neg_mask) >> n) ^ neg_mask;
-                    //
-                    // return {name}(shifted & mask);
-                    // ```
-
                     // NOTE ON REPRESENTATION: All signed integers in Rust, at least those that are primitives,
                     //                         are stored in two's complement. This algorithm relies upon that
                     //                         fact.
